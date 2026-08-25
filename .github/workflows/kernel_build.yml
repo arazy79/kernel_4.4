@@ -33,10 +33,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ github.event.inputs.branch }}-${{ github.event.inputs.defconfig }}-${{ github.run_id }}
+          key: ccache-${{ replace(github.event.inputs.branch, '/', '-') }}-${{ github.event.inputs.defconfig }}-${{ github.run_id }}
           restore-keys: |
-            ccache-${{ github.event.inputs.branch }}-${{ github.event.inputs.defconfig }}-
-            ccache-${{ github.event.inputs.branch }}-
+            ccache-${{ replace(github.event.inputs.branch, '/', '-') }}-${{ github.event.inputs.defconfig }}-
+            ccache-${{ replace(github.event.inputs.branch, '/', '-') }}-
 
       - name: Install dependencies
         run: |
@@ -120,6 +120,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-4.4-HMP-${{ github.event.inputs.branch }}-${{ github.run_id }}
+          name: kernel-4.4-HMP-${{ replace(github.event.inputs.branch, '/', '-') }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
