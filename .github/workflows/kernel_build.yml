@@ -120,6 +120,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-4.4-HMP-r9-hmp-${{ github.run_id }}
+          name: kernel-4.4-HMP-${{ replace(github.event.inputs.branch, '/', '-') }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
