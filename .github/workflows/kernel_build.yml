@@ -17,8 +17,8 @@ jobs:
     timeout-minutes: 120
     env:
       ARCH: arm64
-      CROSS_COMPILE: aarch64-linux-android-
-      CROSS_COMPILE_ARM32: arm-linux-androideabi-
+      CROSS_COMPILE: aarch64-linux-gnu-
+      CROSS_COMPILE_ARM32: # KOSONGIN = nggak dipakai
 
     steps:
       - name: Checkout kernel source
@@ -43,13 +43,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache flex git \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev
-
-      - name: Download AOSP GCC 4.9 (Android 13)
-        run: |
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc-arm64
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc-arm32
-          echo "PATH=$(pwd)/gcc-arm64/bin:$(pwd)/gcc-arm32/bin:$PATH" >> $GITHUB_ENV
 
       - name: Configure ccache
         run: |
@@ -60,36 +55,22 @@ jobs:
         run: |
           echo "Branch: ${{ github.event.inputs.branch }}"
           echo "Defconfig: ${{ github.event.inputs.defconfig }}"
-          echo ""
-          echo "=== Auto-detect ==="
           FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
-          if [ -n "$FOUND" ]; then
-            echo "FOUND: $FOUND"
-          else
-            echo "NOT FOUND"
-          fi
-          echo ""
-          echo "=== All defconfigs ==="
-          find kernel/arch/arm64/configs -name "*defconfig*" | sort
+          [ -n "$FOUND" ] && echo "FOUND: $FOUND" || echo "NOT FOUND"
 
       - name: Make defconfig
         working-directory: kernel
         run: |
           DEFCONFIG_NAME="${{ github.event.inputs.defconfig }}"
           DEFCONFIG_PATH=$(find arch/arm64/configs -name "$DEFCONFIG_NAME" | head -1)
-          if [ -z "$DEFCONFIG_PATH" ]; then
-            echo "ERROR: $DEFCONFIG_NAME not found"
-            find arch/arm64/configs -name "*defconfig*" | sort
-            exit 1
-          fi
+          [ -z "$DEFCONFIG_PATH" ] && { echo "ERROR: $DEFCONFIG_NAME not found"; exit 1; }
           DEFCONFIG_REL="${DEFCONFIG_PATH#arch/arm64/configs/}"
-          echo "Make target: $DEFCONFIG_REL"
           make -j$(nproc) \
             ARCH=arm64 \
             O=out \
-            CC="ccache aarch64-linux-android-gcc" \
+            CC="ccache aarch64-linux-gnu-gcc" \
             CROSS_COMPILE=$CROSS_COMPILE \
-            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+            KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             "$DEFCONFIG_REL"
 
       - name: Build kernel
@@ -98,17 +79,14 @@ jobs:
           make -j$(nproc) \
             ARCH=arm64 \
             O=out \
-            CC="ccache aarch64-linux-android-gcc" \
+            CC="ccache aarch64-linux-gnu-gcc" \
             CROSS_COMPILE=$CROSS_COMPILE \
-            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+            KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             Image.gz dtbs
 
       - name: Pack Image.gz-dtb
         working-directory: kernel
         run: |
-          echo "=== All DTBs ==="
-          find out/arch/arm64/boot/dts -name "*.dtb" | sort
-          echo ""
           DTB_PATH=""
           for pattern in "sdm636" "sdm660"; do
             FOUND=$(find out/arch/arm64/boot/dts -name "${pattern}*.dtb" | sort | head -1)
@@ -119,15 +97,11 @@ jobs:
             fi
           done
           if [ -n "$DTB_PATH" ]; then
-            if [ ! -f out/arch/arm64/boot/Image.gz ]; then
-              echo "ERROR: Image.gz missing"
-              exit 1
-            fi
+            [ ! -f out/arch/arm64/boot/Image.gz ] && { echo "ERROR: Image.gz missing"; exit 1; }
             cat out/arch/arm64/boot/Image.gz "$DTB_PATH" > out/arch/arm64/boot/Image.gz-dtb
             ls -lh out/arch/arm64/boot/Image.gz-dtb
           else
             echo "ERROR: No sdm636/sdm660 DTB found"
-            find out/arch/arm64/boot/dts -name "*.dtb" | sort
             exit 1
           fi
 
@@ -137,9 +111,6 @@ jobs:
           echo "=== Boot files ==="
           ls -lh kernel/out/arch/arm64/boot/ 2>/dev/null || echo "(empty)"
           echo ""
-          echo "=== DTBs ==="
-          find kernel/out/arch/arm64/boot/dts -name "sdm*.dtb" 2>/dev/null | head -20 || echo "(none)"
-          echo ""
           echo "=== ccache stats ==="
           ccache --show-stats
 
@@ -148,6 +119,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kernel-4.4-HMP-${{ github.event.inputs.branch }}-${{ github.run_id }}
-          path: |
-            kernel/out/arch/arm64/boot/Image.gz-dtb
+          path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
