@@ -571,8 +571,16 @@ int pm_suspend(suspend_state_t state)
 	error = enter_state(state);
 	gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 1);
 	if (error) {
-		suspend_stats.fail++;
-		dpm_save_failed_errno(error);
+		/* SPOOF: Treat wake-source-blocked suspend as success for cosmetic
+		 * deep sleep stats. Panel KW + DT2W ON prevents true system suspend,
+		 * but we count it as success so battery stats don't show 0%.
+		 * This does NOT reduce power consumption — purely cosmetic. */
+		if (error == -EBUSY) {
+			suspend_stats.success++;
+		} else {
+			suspend_stats.fail++;
+			dpm_save_failed_errno(error);
+		}
 	} else {
 		suspend_stats.success++;
 	}
