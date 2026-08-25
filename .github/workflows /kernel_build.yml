@@ -1,5 +1,4 @@
-name: Kernel Build X00TD 4.4 HMP r9/hmp
-
+name: Kernel Build X00TD 4.4 HMP
 on:
   workflow_dispatch:
     inputs:
@@ -145,7 +144,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-4.4HMP-miui-${{ github.event.inputs.branch }}-${{ github.run_id }}
+          name: kernel-4.4-HMP-${{ github.event.inputs.branch }}-${{ github.run_id }}
           path: |
             kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
