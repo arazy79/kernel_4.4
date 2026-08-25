@@ -1776,6 +1776,15 @@ int smblib_get_prop_batt_status(struct smb_charger *chg,
 	}
 	dc_online = (bool)pval.intval;
 
+	/* === TAMBAHAN UNTUK A13 === */
+    if ((usb_online || dc_online) &&
+        (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0) &&
+        get_client_vote(chg->dc_suspend_votable, USER_VOTER)) {
+        val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+        return 0;
+    }
+    /* === END TAMBAHAN === */
+
 	rc = smblib_read(chg, BATTERY_CHARGER_STATUS_1_REG, &stat);
 	if (rc < 0) {
 		smblib_err(chg, "Couldn't read BATTERY_CHARGER_STATUS_1 rc=%d\n",
