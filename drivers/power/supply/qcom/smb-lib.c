@@ -1693,8 +1693,7 @@ int smblib_get_prop_input_suspend(struct smb_charger *chg,
 {
 	val->intval
 		= (get_client_vote(chg->usb_icl_votable, USER_VOTER) == 0)
-		 && get_client_vote(chg->dc_suspend_votable, USER_VOTER);
-	return 0;
+		 && (get_client_vote(chg->dc_suspend_votable, USER_VOTER) == 0);
 }
 
 #ifdef CONFIG_MACH_ASUS_SDM660
@@ -1703,7 +1702,7 @@ int smblib_get_prop_charging_enabled(struct smb_charger *chg,
 {
 	val->intval = !((get_client_vote(chg->usb_icl_votable,
 			USER_VOTER) == 0) &&
-			get_client_vote(chg->dc_suspend_votable, USER_VOTER));
+			(get_client_vote(chg->dc_suspend_votable, USER_VOTER) == 0));
 
 	return 0;
 }
@@ -3476,8 +3475,8 @@ void smblib_asus_monitor_start(struct smb_charger *chg, int time)
 				msecs_to_jiffies(time));
 }
 
-#define EN_BAT_CHG_EN_COMMAND_TRUE	0
-#define EN_BAT_CHG_EN_COMMAND_FALSE	BIT(0)
+#define EN_BAT_CHG_EN_COMMAND_TRUE	BIT(0)
+#define EN_BAT_CHG_EN_COMMAND_FALSE	0
 #define SMBCHG_FLOAT_VOLTAGE_VALUE_4P004		0x45
 #define SMBCHG_FLOAT_VOLTAGE_VALUE_4P095		0x51
 #define SMBCHG_FLOAT_VOLTAGE_VALUE_4P064		0x4D
