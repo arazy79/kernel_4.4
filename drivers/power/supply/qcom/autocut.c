@@ -52,29 +52,35 @@ static void autocut_work_fn(struct work_struct *work)
 		goto put_batt;
 	charging = val.intval;
 
-if (usb_present) {
-        if (capacity >= max_soc && charging) {
-            val.intval = 0;
-            power_supply_set_property(psy_batt, POWER_SUPPLY_PROP_CHARGING_ENABLED, &val);
-            power_supply_changed(psy_batt);  // TAMBAH INI
-            pr_info("autocut: charging STOPPED at %d%%\n", capacity);
+	if (usb_present) {
+		if (capacity >= max_soc && charging) {
+			/* Nyampe max → STOP */
+			val.intval = 0;
+			power_supply_set_property(psy_batt, POWER_SUPPLY_PROP_CHARGING_ENABLED, &val);
+			pr_info("autocut: charging STOPPED at %d%% (max=%d)\n", capacity, max_soc);
 
-        } else if (!charging && capacity < max_soc) {
-            if (capacity <= min_soc || !last_usb_present) {
-                val.intval = 1;
-                power_supply_set_property(psy_batt, POWER_SUPPLY_PROP_CHARGING_ENABLED, &val);
-                power_supply_changed(psy_batt);  // TAMBAH INI
-                pr_info("autocut: charging RESUMED at %d%%\n", capacity);
-            }
-        }
-    }
+		} else if (!charging && capacity < max_soc) {
+			/* Charger nyolok tapi charging mati.
+			 * Resume kalau:
+			 * 1. Baterai turun ke min_soc (charger nyolok terus), ATAU
+			 * 2. Charger BARU dicolok (bypass min_soc)
+			 */
+			if (capacity <= min_soc || !last_usb_present) {
+				val.intval = 1;
+				power_supply_set_property(psy_batt, POWER_SUPPLY_PROP_CHARGING_ENABLED, &val);
+				pr_info("autocut: charging RESUMED at %d%% (reason=%s)\n",
+					capacity,
+					!last_usb_present ? "reconnect" : "min_soc");
+			}
+		}
+	}
 
-    last_usb_present = usb_present;
+	last_usb_present = usb_present;
 
 put_batt:
-    power_supply_put(psy_batt);
+	power_supply_put(psy_batt);
 reschedule:
-    schedule_delayed_work(&autocut_work, msecs_to_jiffies(1000));  // GANTI 10000 → 1000
+	schedule_delayed_work(&autocut_work, msecs_to_jiffies(10000));
 }
 
 static int __init autocut_init(void)
