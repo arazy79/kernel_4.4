@@ -15,11 +15,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
     env:
       ARCH: arm64
-      CROSS_COMPILE: aarch64-linux-gnu-
-      CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+      CROSS_COMPILE: aarch64-linux-android-
+      CROSS_COMPILE_ARM32: arm-linux-androideabi-
 
     steps:
       - name: Checkout kernel source
@@ -44,8 +43,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ccache flex git \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev
+
+      - name: Download AOSP GCC 4.9 (Android 13)
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc-arm64
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc-arm32
+          echo "PATH=$(pwd)/gcc-arm64/bin:$(pwd)/gcc-arm32/bin:$PATH" >> $GITHUB_ENV
 
       - name: Configure ccache
         run: |
@@ -83,7 +87,7 @@ jobs:
           make -j$(nproc) \
             ARCH=arm64 \
             O=out \
-            CC="ccache aarch64-linux-gnu-gcc" \
+            CC="ccache aarch64-linux-android-gcc" \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             "$DEFCONFIG_REL"
@@ -94,10 +98,9 @@ jobs:
           make -j$(nproc) \
             ARCH=arm64 \
             O=out \
-            CC="ccache aarch64-linux-gnu-gcc" \
+            CC="ccache aarch64-linux-android-gcc" \
             CROSS_COMPILE=$CROSS_COMPILE \
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
-            KCFLAGS="-Wno-error" \
             Image.gz dtbs
 
       - name: Pack Image.gz-dtb
