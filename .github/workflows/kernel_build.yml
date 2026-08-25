@@ -18,7 +18,7 @@ jobs:
     env:
       ARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
-      CROSS_COMPILE_ARM32: # KOSONGIN = nggak dipakai
+      CROSS_COMPILE_ARM32: arm-linux-gnueabi-
 
     steps:
       - name: Checkout kernel source
@@ -70,6 +70,7 @@ jobs:
             O=out \
             CC="ccache aarch64-linux-gnu-gcc" \
             CROSS_COMPILE=$CROSS_COMPILE \
+            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             "$DEFCONFIG_REL"
 
@@ -81,6 +82,7 @@ jobs:
             O=out \
             CC="ccache aarch64-linux-gnu-gcc" \
             CROSS_COMPILE=$CROSS_COMPILE \
+            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             Image.gz dtbs
 
