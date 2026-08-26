@@ -24,7 +24,7 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/SkyWalker_4.4
+          repository: ${{ github.repository_owner }}/kernel_4.4
           ref: ${{ github.event.inputs.branch }}
           path: kernel
           submodules: recursive
