@@ -93,7 +93,7 @@
 	qcom,fg-esr-broad-lt-filter-micro-pct = <2200>;
 	qcom,slope-limit-temp-threshold = <150>;
 	qcom,slope-limit-coeffs = <1 1 1 1>;
-	qcom,fg-chg-term-current = <150>;
+	qcom,fg-chg-term-current = <200>;
 	qcom,fg-sys-term-current = <(-200)>;
 	qcom,hold-soc-while-full;
 	qcom,linearize-soc;
