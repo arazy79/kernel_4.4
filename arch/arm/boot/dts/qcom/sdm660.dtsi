@@ -50,6 +50,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x0>;
+			clock-frequency = <2154000000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile0>;
 			qcom,lmh-dcvs = <&lmh_dcvs0>;
@@ -79,6 +80,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x1>;
+			clock-frequency = <2154000000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile0>;
 			qcom,lmh-dcvs = <&lmh_dcvs0>;
@@ -102,6 +104,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x2>;
+			clock-frequency = <2154000000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile0>;
 			qcom,lmh-dcvs = <&lmh_dcvs0>;
@@ -125,6 +128,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x3>;
+			clock-frequency = <2154000000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile0>;
 			qcom,lmh-dcvs = <&lmh_dcvs0>;
@@ -148,6 +152,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x100>;
+			clock-frequency = <2457600000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile1>;
 			qcom,lmh-dcvs = <&lmh_dcvs1>;
@@ -175,6 +180,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x101>;
+			clock-frequency = <2457600000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile2>;
 			qcom,lmh-dcvs = <&lmh_dcvs1>;
@@ -198,6 +204,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x102>;
+			clock-frequency = <2457600000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile3>;
 			qcom,lmh-dcvs = <&lmh_dcvs1>;
@@ -221,6 +228,7 @@
 			device_type = "cpu";
 			compatible = "qcom,kryo260";
 			reg = <0x0 0x103>;
+			clock-frequency = <2457600000>;
 			enable-method = "psci";
 			qcom,limits-info = <&mitigation_profile4>;
 			qcom,lmh-dcvs = <&lmh_dcvs1>;
@@ -822,9 +830,9 @@
 	qcom,msm-thermal {
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <1>;
-		qcom,poll-ms = <100>;
+		qcom,poll-ms = <200>;
 		qcom,therm-reset-temp = <115>;
-		qcom,core-limit-temp = <60>;
+		qcom,core-limit-temp = <70>;
 		qcom,core-temp-hysteresis = <10>;
 		qcom,hotplug-temp = <105>;
 		qcom,hotplug-temp-hysteresis = <20>;
@@ -880,7 +888,7 @@
 			qcom,high-threshold-uamp = <4200000>;
 			qcom,vph-high-threshold-uv = <3500000>;
 			qcom,vph-low-threshold-uv = <3300000>;
-			qcom,soc-low-threshold = <10>;
+			qcom,soc-low-threshold = <5>;
 		};
 	};
 
@@ -1224,7 +1232,7 @@
 		qcom,core-dev-table =
 			< 902400 762 >,
 			< 1401600 2086 >,
-			< 1881600 3879 >;
+			< 2150400 3879 >;
 	};
 
 	devfreq_memlat_4: qcom,arm-memlat-mon-4 {
@@ -1244,7 +1252,7 @@
 			cpu-to-dev-map-0 =
 				< 633600 762 >,
 				< 1401600 1571 >,
-				< 1881600 2929 >;
+				< 2150400 2929 >;
 			cpu-to-dev-map-4 =
 				< 1113600 762 >,
 				< 1401600 2086 >,
@@ -1406,13 +1414,14 @@
 			<  2208000000 0x04040073 0x0b5c005c 0x3 7 >;
 
 		qcom,perfcl-speedbin3-v1 =
-			<   300000000 0x0004000f 0x01200020 0x1 1 >,
-			<  1113600000 0x0404003a 0x052e002e 0x1 2 >,
-			<  1401600000 0x04040049 0x073a003a 0x2 3 >,
-			<  1747200000 0x0404005b 0x09480048 0x2 4 >,
-			<  1958400000 0x04040066 0x0a510051 0x2 5 >,
-			<  2150400000 0x04040070 0x0b590059 0x2 6 >,
-			<  2457600000 0x04040080 0x0c660066 0x3 7 >;
+			<   633600000 0x05040021 0x03200020 0x1 1 >,
+			<   902400000 0x0404002f 0x04260026 0x1 2 >,
+			<  1113600000 0x0404003a 0x052e002e 0x1 3 >,
+			<  1401600000 0x04040049 0x073a003a 0x2 4 >,
+			<  1747200000 0x0404005b 0x09480048 0x2 5 >,
+			<  1958400000 0x04040066 0x0a510051 0x2 6 >,
+			<  2150400000 0x04040070 0x0b590059 0x2 7 >,
+			<  2457600000 0x04040080 0x0c660066 0x3 8 >;
 
 		qcom,perfcl-speedbin4-v1 =
 			<   300000000 0x0004000f 0x01200020 0x1 1 >,
