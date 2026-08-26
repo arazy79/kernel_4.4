@@ -578,18 +578,13 @@ int pm_suspend(suspend_state_t state)
 	if (error) {
 		/* SPOOF V2: Force ALL suspend errors as success for cosmetic
 		 * deep sleep stats. Panel KW + DT2W ON blocks true system
-		 * suspend via various error paths (-EBUSY, -EAGAIN, etc).
-		 * We also accumulate elapsed time so Android battery stats
-		 * show non-zero deep sleep percentage.
+		 * suspend via various error paths. This ensures Android battery
+		 * stats see non-zero success count.
 		 * PURELY COSMETIC — does NOT reduce power consumption. */
-		pr_debug("PM: SPOOF suspend err=%d after %lld ms -> count success\n",
-			 error, elapsed_ms);
+		pr_debug("PM: SPOOF suspend err=%d -> count success\n", error);
 		suspend_stats.success++;
-		/* Fake last_success_time so monitoring tools see activity */
-		suspend_stats.last_success_time = ktime_get_real_seconds();
 	} else {
 		suspend_stats.success++;
-		suspend_stats.last_success_time = ktime_get_real_seconds();
 	}
 	pm_suspend_marker("exit");
 	return error;
