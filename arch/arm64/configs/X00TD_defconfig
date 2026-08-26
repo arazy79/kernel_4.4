@@ -2,7 +2,7 @@
 # Automatically generated file; DO NOT EDIT.
 # Linux/arm64 4.4.302 Kernel Configuration
 #
-CONFIG_LOCALVERSION=="-androidperf+ MIUI!!"
+CONFIG_LOCALVERSION=="-androidperf+ MIUI"
 # CONFIG_LOCALVERSION_AUTO is not set
 # CONFIG_USELIB is not set
 CONFIG_DEFAULT_HOSTNAME=""
