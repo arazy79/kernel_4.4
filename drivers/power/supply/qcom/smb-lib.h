@@ -72,7 +72,7 @@ enum print_reason {
 #define VCONN_MAX_ATTEMPTS	3
 #define OTG_MAX_ATTEMPTS	3
 #define BOOST_BACK_STORM_COUNT	3
-#define WEAK_CHG_STORM_COUNT	8
+#define WEAK_CHG_STORM_COUNT	40
 
 enum smb_mode {
 	PARALLEL_MASTER = 0,
