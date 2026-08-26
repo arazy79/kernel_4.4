@@ -562,27 +562,17 @@ static void pm_suspend_marker(char *annotation)
 int pm_suspend(suspend_state_t state)
 {
 	int error;
-	ktime_t suspend_start, suspend_end;
-	s64 elapsed_ms;
 
 	if (state <= PM_SUSPEND_ON || state >= PM_SUSPEND_MAX)
 		return -EINVAL;
 
 	pm_suspend_marker("entry");
 	gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 0);
-	suspend_start = ktime_get();
 	error = enter_state(state);
-	suspend_end = ktime_get();
 	gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 1);
-	elapsed_ms = ktime_to_ms(ktime_sub(suspend_end, suspend_start));
 	if (error) {
-		/* SPOOF V2: Force ALL suspend errors as success for cosmetic
-		 * deep sleep stats. Panel KW + DT2W ON blocks true system
-		 * suspend via various error paths. This ensures Android battery
-		 * stats see non-zero success count.
-		 * PURELY COSMETIC — does NOT reduce power consumption. */
-		pr_debug("PM: SPOOF suspend err=%d -> count success\n", error);
-		suspend_stats.success++;
+		suspend_stats.fail++;
+		dpm_save_failed_errno(error);
 	} else {
 		suspend_stats.success++;
 	}
