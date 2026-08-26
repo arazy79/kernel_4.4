@@ -641,7 +641,7 @@
 			qcom,misc-clk-trim-error-reg = <0xf3>;
 			qcom,actuator-type = <0>;
 			qcom,play-mode = "direct";
-			qcom,vmax-mv = <3200>;
+			qcom,vmax-mv = <1800>;
 			qcom,ilim-ma = <800>;
 			qcom,sc-dbc-cycles = <8>;
 			qcom,wave-play-rate-us = <6667>;
@@ -662,9 +662,9 @@
 			qcom,misc-clk-trim-error-reg = <0xf3>;
 			qcom,actuator-type = "lra";
 			qcom,play-mode = "direct";
-			qcom,vmax-mv = <3200>;
+			qcom,vmax-mv = <1700>;
 			qcom,ilim-ma = <800>;
-			qcom,wave-shape = "square";
+			qcom,wave-shape = "sine";
 			qcom,wave-play-rate-us = <6667>;
 			qcom,int-pwm-freq-khz = <505>;
 			qcom,sc-deb-cycles = <8>;
