@@ -52,18 +52,19 @@ jobs:
             echo 'ccflags-y += -std=gnu11' >> drivers/kernelsu/Makefile
           fi
           
-          # Fix MODULE_IMPORT_NS (kernel < 5.4 nggak punya macro ini)
-          # drivers/kernelsu adalah symlink, patch langsung ke file-nya
+          # Fix MODULE_IMPORT_NS (kernel < 5.4)
           sed -i '/MODULE_IMPORT_NS/d' drivers/kernelsu/ksu.c
-          echo "Patched MODULE_IMPORT_NS in ksu.c"
           
-          # Fix compiler_types.h (kernel < 4.18 nggak punya file ini)
+          # Fix compiler_types.h (kernel < 4.18)
           sed -i 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' drivers/kernelsu/allowlist.c
-          echo "Patched compiler_types.h in allowlist.c"
+          
+          # Fix task_stack.h (kernel < 4.9)
+          # Patch semua file .c di KSU karena bisa jadi lebih dari 1 file yang include ini
+          find KernelSU-Next/kernel -name "*.c" -exec sed -i '/#include <linux\/sched\/task_stack.h>/d' {} +
+          echo "Patched task_stack.h includes"
           
           echo "KSU Next applied."
           ls -la drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
-          cat drivers/kernelsu/ksu.c | grep -n "MODULE_IMPORT_NS" || echo "MODULE_IMPORT_NS removed OK"
           
       - name: Cache ccache
         uses: actions/cache@v4
