@@ -37,6 +37,29 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           path: kernel
           submodules: recursive
+          
+      - name: Apply KernelSU Next
+        if: ${{ github.event.inputs.ksu == 'true' }}
+        run: |
+          cd kernel
+          echo "Applying KernelSU Next v1.0.2..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/v1.0.2/kernel/setup.sh" | bash -s v1.0.2
+          
+          # Fix C99/C11 syntax untuk kernel 4.4 yang default C89
+          if [ -f drivers/kernelsu/Kbuild ]; then
+            echo 'ccflags-y += -std=gnu11' >> drivers/kernelsu/Kbuild
+          elif [ -f drivers/kernelsu/Makefile ]; then
+            echo 'ccflags-y += -std=gnu11' >> drivers/kernelsu/Makefile
+          fi
+          
+          # Fix MODULE_IMPORT_NS yang nggak ada di kernel < 5.4
+          if [ -f drivers/kernelsu/ksu.c ]; then
+            sed -i '/MODULE_IMPORT_NS/d' drivers/kernelsu/ksu.c
+            echo "Patched MODULE_IMPORT_NS for kernel 4.4"
+          fi
+          
+          echo "KSU Next applied."
+          ls drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
 
       - name: Cache ccache
         uses: actions/cache@v4
