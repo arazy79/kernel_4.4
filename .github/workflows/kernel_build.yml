@@ -52,20 +52,16 @@ jobs:
             echo 'ccflags-y += -std=gnu11' >> drivers/kernelsu/Makefile
           fi
           
-          # Fix MODULE_IMPORT_NS yang nggak ada di kernel < 5.4
-          find drivers/kernelsu -type f \( -name "*.c" -o -name "*.h" \) -exec grep -l "MODULE_IMPORT_NS" {} \; 2>/dev/null | while read f; do
-            sed -i '/MODULE_IMPORT_NS/d' "$f"
-            echo "Patched MODULE_IMPORT_NS: $f"
-          done
+          # Fix MODULE_IMPORT_NS (kernel < 5.4 nggak punya macro ini)
+          find drivers/kernelsu -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i '/MODULE_IMPORT_NS/d' {} +
+          echo "Patched MODULE_IMPORT_NS"
           
-          # Fix compiler_types.h yang nggak ada di kernel < 4.18
-          find drivers/kernelsu -type f \( -name "*.c" -o -name "*.h" \) -exec grep -l "compiler_types.h" {} \; 2>/dev/null | while read f; do
-            sed -i 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' "$f"
-            echo "Patched compiler_types.h: $f"
-          done
+          # Fix compiler_types.h (kernel < 4.18 nggak punya file ini)
+          find drivers/kernelsu -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' {} +
+          echo "Patched compiler_types.h"
           
           echo "KSU Next applied."
-          ls drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
+          ls -la drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
 
       - name: Cache ccache
         uses: actions/cache@v4
