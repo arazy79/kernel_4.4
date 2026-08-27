@@ -58,9 +58,12 @@ jobs:
           # Fix compiler_types.h (kernel < 4.18)
           sed -i 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' drivers/kernelsu/allowlist.c
           
-          # Fix task_stack.h (kernel < 4.9) - pakai -L supaya follow symlink
+          # Fix task_stack.h (kernel < 4.9)
           find -L drivers/kernelsu -name "*.c" -exec sed -i '/#include <linux\/sched\/task_stack.h>/d' {} +
-          echo "Patched task_stack.h includes"
+          
+          # Fix full_name_hash signature (kernel < 4.17 = 2 args, bukan 3 args)
+          sed -i 's/full_name_hash(NULL, dirpath, strlen(dirpath))/full_name_hash((const unsigned char *)dirpath, strlen(dirpath))/' drivers/kernelsu/throne_tracker.c
+          echo "Patched full_name_hash for kernel 4.4"
           
           echo "KSU Next applied."
           ls -la drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
