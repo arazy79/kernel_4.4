@@ -10,6 +10,14 @@ on:
         description: 'Branch repo'
         required: true
         default: '11'
+      ksu:
+        description: 'Enable KernelSU Next?'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build:
@@ -28,6 +36,16 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           path: kernel
           submodules: recursive
+
+      - name: Apply KernelSU Next
+        if: ${{ github.event.inputs.ksu == 'true' }}
+        run: |
+          cd kernel
+          echo "Applying KernelSU Next..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          echo "KSU Next applied."
+          # Verifikasi folder kernelsu terbuat
+          ls drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -55,6 +73,7 @@ jobs:
         run: |
           echo "Branch: ${{ github.event.inputs.branch }}"
           echo "Defconfig: ${{ github.event.inputs.defconfig }}"
+          echo "KSU: ${{ github.event.inputs.ksu }}"
           FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
           [ -n "$FOUND" ] && echo "FOUND: $FOUND" || echo "NOT FOUND"
 
@@ -110,6 +129,11 @@ jobs:
       - name: Build summary
         if: always()
         run: |
+          echo "=== KSU Status ==="
+          [ "${{ github.event.inputs.ksu }}" = "true" ] \
+            && echo "KernelSU Next: ENABLED" \
+            || echo "KernelSU Next: DISABLED"
+          echo ""
           echo "=== Boot files ==="
           ls -lh kernel/out/arch/arm64/boot/ 2>/dev/null || echo "(empty)"
           echo ""
@@ -120,6 +144,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-4.4-HMP-MIUI-${{ github.run_id }}
+          name: kernel-4.4-HMP-MIUI-KSU${{ github.event.inputs.ksu }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
