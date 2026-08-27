@@ -19,7 +19,7 @@ on:
         options:
           - 'true'
           - 'false'
-          
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,8 +28,8 @@ jobs:
       ARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
       CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+
     steps:
-    
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
@@ -37,7 +37,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           path: kernel
           submodules: recursive
-          
+
       - name: Apply KernelSU Next
         if: ${{ github.event.inputs.ksu == 'true' }}
         run: |
@@ -49,27 +49,12 @@ jobs:
           echo 'ccflags-y += -std=gnu11' >> drivers/kernelsu/Makefile
 
           # Fix 2: path_umount tidak ada di kernel 4.4
-          # do_umount di 4.4 adalah static, perlu dibuka dulu
           sed -i 's/^static int do_umount(/int do_umount(/' fs/namespace.c
-
-          # Tambah implementasi path_umount ke namespace.c
-          cat >> fs/namespace.c << 'EOF'
-
-int path_umount(struct path *path, int flags)
-{
-	struct mount *mnt = real_mount(path->mnt);
-	int ret;
-	ret = do_umount(mnt, flags);
-	dput(path->dentry);
-	mntput_no_expire(mnt);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(path_umount);
-EOF
+          echo "CmludCBwYXRoX3Vtb3VudChzdHJ1Y3QgcGF0aCAqcGF0aCwgaW50IGZsYWdzKQp7CglzdHJ1Y3QgbW91bnQgKm1udCA9IHJlYWxfbW91bnQocGF0aC0+bW50KTsKCWludCByZXQ7CglyZXQgPSBkb191bW91bnQobW50LCBmbGFncyk7CglkcHV0KHBhdGgtPmRlbnRyeSk7CgltbnRwdXRfbm9fZXhwaXJlKG1udCk7CglyZXR1cm4gcmV0Owp9CkVYUE9SVF9TWU1CT0xfR1BMKHBhdGhfdW1vdW50KTsK" | base64 -d >> fs/namespace.c
 
           echo "KSU Next applied."
           ls drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
-          
+
       - name: Cache ccache
         uses: actions/cache@v4
         with:
@@ -78,7 +63,7 @@ EOF
           restore-keys: |
             ccache-${{ github.event.inputs.branch }}-${{ github.event.inputs.defconfig }}-
             ccache-${{ github.event.inputs.branch }}-
-            
+
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
@@ -86,12 +71,12 @@ EOF
             bc bison build-essential ccache flex git \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev
-            
+
       - name: Configure ccache
         run: |
           ccache --max-size=2G
           ccache --zero-stats
-          
+
       - name: Debug check defconfig
         run: |
           echo "Branch: ${{ github.event.inputs.branch }}"
@@ -99,7 +84,7 @@ EOF
           echo "KSU: ${{ github.event.inputs.ksu }}"
           FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
           [ -n "$FOUND" ] && echo "FOUND: $FOUND" || echo "NOT FOUND"
-          
+
       - name: Make defconfig
         working-directory: kernel
         run: |
@@ -115,7 +100,7 @@ EOF
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             "$DEFCONFIG_REL"
-            
+
       - name: Build kernel
         working-directory: kernel
         run: |
@@ -127,7 +112,7 @@ EOF
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             Image.gz dtbs
-            
+
       - name: Pack Image.gz-dtb
         working-directory: kernel
         run: |
@@ -148,7 +133,7 @@ EOF
             echo "ERROR: No sdm636/sdm660 DTB found"
             exit 1
           fi
-          
+
       - name: Build summary
         if: always()
         run: |
@@ -162,7 +147,7 @@ EOF
           echo ""
           echo "=== ccache stats ==="
           ccache --show-stats
-          
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
