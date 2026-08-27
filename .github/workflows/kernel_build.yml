@@ -38,23 +38,6 @@ jobs:
           path: kernel
           submodules: recursive
 
-      - name: Apply KernelSU Next
-        if: ${{ github.event.inputs.ksu == 'true' }}
-        run: |
-          cd kernel
-          echo "Applying KernelSU Next..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s v1.0.5
-
-          # Fix 1: C99 syntax untuk kernel 4.4
-          echo 'ccflags-y += -std=gnu11' >> drivers/kernelsu/Makefile
-
-          # Fix 2: path_umount tidak ada di kernel 4.4
-          sed -i 's/^static int do_umount(/int do_umount(/' fs/namespace.c
-          echo "CmludCBwYXRoX3Vtb3VudChzdHJ1Y3QgcGF0aCAqcGF0aCwgaW50IGZsYWdzKQp7CglzdHJ1Y3QgbW91bnQgKm1udCA9IHJlYWxfbW91bnQocGF0aC0+bW50KTsKCWludCByZXQ7CglyZXQgPSBkb191bW91bnQobW50LCBmbGFncyk7CglkcHV0KHBhdGgtPmRlbnRyeSk7CgltbnRwdXRfbm9fZXhwaXJlKG1udCk7CglyZXR1cm4gcmV0Owp9CkVYUE9SVF9TWU1CT0xfR1BMKHBhdGhfdW1vdW50KTsK" | base64 -d >> fs/namespace.c
-
-          echo "KSU Next applied."
-          ls drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
-
       - name: Cache ccache
         uses: actions/cache@v4
         with:
