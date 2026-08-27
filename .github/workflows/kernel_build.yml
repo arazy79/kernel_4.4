@@ -58,9 +58,8 @@ jobs:
           # Fix compiler_types.h (kernel < 4.18)
           sed -i 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' drivers/kernelsu/allowlist.c
           
-          # Fix task_stack.h (kernel < 4.9)
-          # Patch semua file .c di KSU karena bisa jadi lebih dari 1 file yang include ini
-          find KernelSU-Next/kernel -name "*.c" -exec sed -i '/#include <linux\/sched\/task_stack.h>/d' {} +
+          # Fix task_stack.h (kernel < 4.9) - pakai -L supaya follow symlink
+          find -L drivers/kernelsu -name "*.c" -exec sed -i '/#include <linux\/sched\/task_stack.h>/d' {} +
           echo "Patched task_stack.h includes"
           
           echo "KSU Next applied."
@@ -157,7 +156,7 @@ jobs:
           ls -lh kernel/out/arch/arm64/boot/ 2>/dev/null || echo "(empty)"
           echo ""
           echo "=== ccache stats ==="
-          ccache --show-stats
+          ccache --show-stats 2>/dev/null || echo "ccache not available in PATH"
           
       - name: Upload artifacts
         if: always()
