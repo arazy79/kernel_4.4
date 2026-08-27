@@ -37,8 +37,8 @@ jobs:
           path: kernel
           submodules: recursive
 
-- name: Apply KernelSU Next
-  if: ${{ github.event.inputs.ksu == 'true' }}
+      - name: Apply KernelSU Next
+      if: ${{ github.event.inputs.ksu == 'true' }}
   run: |
     cd kernel
     echo "Applying KernelSU Next v1.0.2 (4.4 stable)..."
