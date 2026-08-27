@@ -53,10 +53,16 @@ jobs:
           fi
           
           # Fix MODULE_IMPORT_NS yang nggak ada di kernel < 5.4
-          if [ -f drivers/kernelsu/ksu.c ]; then
-            sed -i '/MODULE_IMPORT_NS/d' drivers/kernelsu/ksu.c
-            echo "Patched MODULE_IMPORT_NS for kernel 4.4"
-          fi
+          find drivers/kernelsu -type f \( -name "*.c" -o -name "*.h" \) -exec grep -l "MODULE_IMPORT_NS" {} \; 2>/dev/null | while read f; do
+            sed -i '/MODULE_IMPORT_NS/d' "$f"
+            echo "Patched MODULE_IMPORT_NS: $f"
+          done
+          
+          # Fix compiler_types.h yang nggak ada di kernel < 4.18
+          find drivers/kernelsu -type f \( -name "*.c" -o -name "*.h" \) -exec grep -l "compiler_types.h" {} \; 2>/dev/null | while read f; do
+            sed -i 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' "$f"
+            echo "Patched compiler_types.h: $f"
+          done
           
           echo "KSU Next applied."
           ls drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
