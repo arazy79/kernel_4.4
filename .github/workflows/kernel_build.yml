@@ -61,9 +61,14 @@ jobs:
           # Fix task_stack.h (kernel < 4.9)
           find -L drivers/kernelsu -name "*.c" -exec sed -i '/#include <linux\/sched\/task_stack.h>/d' {} +
           
-          # Fix full_name_hash signature (kernel < 4.17 = 2 args, bukan 3 args)
+          # Fix full_name_hash signature (kernel < 4.17 = 2 args)
           sed -i 's/full_name_hash(NULL, dirpath, strlen(dirpath))/full_name_hash((const unsigned char *)dirpath, strlen(dirpath))/' drivers/kernelsu/throne_tracker.c
-          echo "Patched full_name_hash for kernel 4.4"
+          
+          # Fix group_info->gid (kernel 4.4 pake blocks[], bukan gid[])
+          sed -i 's/group_info->gid\[i\]/group_info->blocks[i]/' drivers/kernelsu/core_hook.c
+          
+          # Fix security_add_hooks (kernel 4.4 = 2 args, bukan 3 args)
+          sed -i 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' drivers/kernelsu/core_hook.c
           
           echo "KSU Next applied."
           ls -la drivers/kernelsu/ || echo "WARNING: drivers/kernelsu/ not found!"
