@@ -19,7 +19,7 @@ on:
         options:
           - 'true'
           - 'false'
-
+          
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,8 +28,8 @@ jobs:
       ARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
       CROSS_COMPILE_ARM32: arm-linux-gnueabi-
-
     steps:
+    
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
@@ -74,7 +74,7 @@ jobs:
           restore-keys: |
             ccache-${{ github.event.inputs.branch }}-${{ github.event.inputs.defconfig }}-
             ccache-${{ github.event.inputs.branch }}-
-
+            
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
@@ -82,12 +82,12 @@ jobs:
             bc bison build-essential ccache flex git \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev
-
+            
       - name: Configure ccache
         run: |
           ccache --max-size=2G
           ccache --zero-stats
-
+          
       - name: Debug check defconfig
         run: |
           echo "Branch: ${{ github.event.inputs.branch }}"
@@ -95,7 +95,7 @@ jobs:
           echo "KSU: ${{ github.event.inputs.ksu }}"
           FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
           [ -n "$FOUND" ] && echo "FOUND: $FOUND" || echo "NOT FOUND"
-
+          
       - name: Make defconfig
         working-directory: kernel
         run: |
@@ -111,7 +111,7 @@ jobs:
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             "$DEFCONFIG_REL"
-
+            
       - name: Build kernel
         working-directory: kernel
         run: |
@@ -123,7 +123,7 @@ jobs:
             CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
             KCFLAGS="-Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" \
             Image.gz dtbs
-
+            
       - name: Pack Image.gz-dtb
         working-directory: kernel
         run: |
@@ -144,7 +144,7 @@ jobs:
             echo "ERROR: No sdm636/sdm660 DTB found"
             exit 1
           fi
-
+          
       - name: Build summary
         if: always()
         run: |
@@ -158,7 +158,7 @@ jobs:
           echo ""
           echo "=== ccache stats ==="
           ccache --show-stats
-
+          
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
