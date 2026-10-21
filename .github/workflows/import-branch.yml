@@ -1,0 +1,53 @@
+name: Import Branch — Tanpa Fork
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Repo Sumber'
+        required: true
+        type: string
+        default: 'arazy79/asus_660_419'
+      source_branch:
+        description: 'Branch yang mau diambil'
+        required: true
+        type: string
+        default: '13'
+      new_branch_name:
+        description: 'Nama branch baru di repo kamu'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  import-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil kode dari sumber
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.source_repo }}
+          ref: ${{ inputs.source_branch }}
+          path: source-code
+          fetch-depth: 0
+
+      - name: Hapus folder workflow dari sumber → biar gak diblokir
+        run: |
+          cd source-code
+          rm -rf .github/workflowsxx/
+          echo "✅ Folder workflow dibersihkan"
+
+      - name: Kirim ke repo kamu
+        run: |
+          cd source-code
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git remote add myrepo "https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git"
+          git checkout -b "${{ inputs.new_branch_name }}"
+          git add .
+          git commit -m "Import dari ${{ inputs.source_repo }} @ ${{ inputs.source_branch }}" || true
+          git push myrepo "${{ inputs.new_branch_name }}"
+          
+          echo "✅ Sukses! Branch sudah masuk ke repo kamu"
