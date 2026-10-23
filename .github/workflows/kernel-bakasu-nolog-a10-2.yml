@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS A10-A11 test
+name: Kernel Build X00TD 4.4 KSU SuSFS A10-A11
 on:
   workflow_dispatch:
     inputs:
@@ -88,10 +88,12 @@ jobs:
             sukisu)
               KSU_URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/main/kernel/setup.sh"
               KSU_BRANCH="builtin"
+              KSU_EXTRA=""
               ;;
             bakasu)
               KSU_URL="https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/sync-susfs/kernel/setup.sh"
               KSU_BRANCH="sync-susfs"
+              KSU_EXTRA="--submodule"
               ;;
             backslashxx)
               if [ "$ENABLE_SUSFS" = "true" ]; then
@@ -100,14 +102,20 @@ jobs:
               fi
               KSU_URL="https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/setup.sh"
               KSU_BRANCH="master"
+              KSU_EXTRA=""
               ;;
             *)
               echo "::error::fork tidak dikenal: $KSU_FORK"
               exit 1
               ;;
           esac
-          curl -LSs "$KSU_URL" | bash -s "$KSU_BRANCH"
-          [ ! -f drivers/kernelsu/Kconfig ] && { echo "::error::setup KSU gagal"; exit 1; }
+          echo "::group::KernelSU setup"
+          echo "KSU script : $KSU_URL"
+          echo "KSU branch : $KSU_BRANCH"
+          echo "Extra args : $KSU_EXTRA"
+          curl -LSs "$KSU_URL" | bash -s "$KSU_BRANCH" $KSU_EXTRA
+          echo "::endgroup::"
+          [ ! -f drivers/kernelsu/Kconfig ] && { echo "::error::setup KSU gagal — drivers/kernelsu/Kconfig tidak ada"; exit 1; }
 
       - name: KernelSU compat fixes for kernel 4.4
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
@@ -136,7 +144,7 @@ jobs:
           PATCH=""
           [ -f susfs_x00td_44.patch ] && PATCH="$PWD/susfs_x00td_44.patch"
           [ -z "$PATCH" ] && [ -f "$BUILDER/Patch/susfs_patch_to_4.4.patch" ] && PATCH="$BUILDER/Patch/susfs_patch_to_4.4.patch"
-          [ -z "$PATCH" ] && { echo "::error::patch SuSFS tidak ditemukan"; exit 1; }
+          [ -z "$PATCH" ] && { echo "::error::patch SuSFS tidak ditemukan"; ls -la "$BUILDER/Patch" || true; exit 1; }
           if git apply -R --check "$PATCH" 2>/dev/null; then
             echo "SuSFS sudah ter-apply, skip"
           elif git apply --check "$PATCH" 2>/dev/null; then
@@ -161,21 +169,7 @@ jobs:
         run: |
           set -e
           echo "Menerapkan patch kompatibilitas Clang → kernel 4.4..."
-          # 1) missing -mno-fp-regs support
           sed -i 's/-mno-fp-regs//g' arch/arm64/Makefile
-          # 2) __asm__ inline yang bikin Clang error
-          find . -name '*.c' -path '*/kernel/*' -o -name '*.c' -path '*/mm/*' | while read f; do
-            [ -f "$f" ] || continue
-            sed -i 's/\(__always_inline__\s*inline\)/inline __always_inline/g' "$f"
-          done
-          # 3) BUILD_BUG_ON Clang di 4.4
-          sed -i 's/BUILD_BUG_ON(/BUILD_BUG_ON(/g' include/linux/bug.h 2>/dev/null || true
-          # 4) pragma clang/gnu
-          grep -rl 'pragma GCC' . --include='*.c' --include='*.h' 2>/dev/null | while read f; do
-            echo '#pragma clang diagnostic push' > /tmp/pragma_tmp
-            cat "$f" >> /tmp/pragma_tmp
-            echo '#pragma clang diagnostic pop' >> /tmp/pragma_tmp
-          done || true
           echo "Patch Clang selesai"
 
       - name: Select toolchain
@@ -257,7 +251,6 @@ jobs:
           GCC32_DIR: ${{ steps.tc.outputs.gcc32_dir }}
           CLANG_DIR: ${{ steps.tc.outputs.clang_dir }}
         run: |
-          # PATH
           case "$TOOLCHAIN" in
             clang)
               echo "$CLANG_DIR/bin" >> "$GITHUB_PATH"
@@ -271,20 +264,17 @@ jobs:
               echo "TC_MAKE_ARGS=CC=aarch64-linux-android-gcc CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-" >> "$GITHUB_ENV"
               ;;
           esac
-          # ccache
           echo "/usr/lib/ccache" >> "$GITHUB_PATH"
           for name in aarch64-linux-android-gcc aarch64-linux-android-g++ \
                       arm-linux-androideabi-gcc arm-linux-androideabi-g++ \
                       clang clang++; do
             [ ! -e "/usr/lib/ccache/$name" ] && sudo ln -sf /usr/bin/ccache "/usr/lib/ccache/$name" 2>/dev/null || true
           done
-          # KCFLAGS
           if [ "$KCFLAGS_W" = "true" ]; then
             echo "TC_KCFLAGS=-w" >> "$GITHUB_ENV"
           else
             echo "TC_KCFLAGS=-Wno-error" >> "$GITHUB_ENV"
           fi
-          # Ccache besar biar cepat
           ccache --max-size=5G
           ccache --zero-stats
 
@@ -332,7 +322,6 @@ jobs:
         working-directory: kernel
         run: |
           DTB_PATH=""
-          # Pola khusus X00TD / sdm660
           for pattern in "asus/X00TD" "sdm660-asus-x00td" "sdm660-x00td" "sdm660"; do
             FOUND=$(find out/arch/arm64/boot/dts -name "*${pattern}*.dtb" | sort | head -1)
             if [ -n "$FOUND" ]; then
