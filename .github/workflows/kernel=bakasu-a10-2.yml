@@ -1,0 +1,362 @@
+name: Kernel Build X00TD 4.4 KSU SuSFS A10-A11
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Repository kernel (format owner/repo)'
+        required: true
+        default: 'arazy79/kernel_4.4'
+      branch:
+        description: 'Branch / tag / commit'
+        required: true
+        default: '11'
+      defconfig:
+        description: 'Nama file defconfig'
+        required: true
+        default: 'X00TD_defconfig'
+      toolchain:
+        description: 'gcc49 = paling aman | clang = eksperimental'
+        type: choice
+        default: 'gcc49'
+        options:
+          - gcc49
+          - clang
+      kcflags_w:
+        description: 'Tekan semua warning (-w)'
+        type: boolean
+        default: false
+      enable_ksu:
+        description: 'Enable KernelSU'
+        type: boolean
+        default: true
+      enable_susfs:
+        description: 'Enable SuSFS'
+        type: boolean
+        default: true
+      ksu_fork:
+        description: 'Fork KernelSU'
+        type: choice
+        default: 'bakasu'
+        options:
+          - bakasu
+          - sukisu
+          - backslashxx
+      builder_ref:
+        description: 'Ref builder repo'
+        required: true
+        default: 'mainline'
+      ksu_debug:
+        description: 'KSU debug log'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TZ: Asia/Jakarta
+      ARCH: arm64
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.repo }}
+          ref: ${{ github.event.inputs.branch }}
+          path: kernel
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Fetch NonGKI builder repo
+        run: |
+          set -e
+          mkdir -p /tmp/builder
+          cd /tmp/builder
+          git init -q
+          git remote add origin https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd.git
+          git fetch -q --depth 1 origin "${{ github.event.inputs.builder_ref }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Setup KernelSU
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
+        working-directory: kernel
+        env:
+          ENABLE_SUSFS: ${{ github.event.inputs.enable_susfs }}
+          KSU_FORK: ${{ github.event.inputs.ksu_fork }}
+        run: |
+          case "$KSU_FORK" in
+            sukisu)
+              KSU_URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/main/kernel/setup.sh"
+              KSU_BRANCH="builtin"
+              ;;
+            bakasu)
+              KSU_URL="https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/sync-susfs/kernel/setup.sh"
+              KSU_BRANCH="sync-susfs"
+              ;;
+            backslashxx)
+              if [ "$ENABLE_SUSFS" = "true" ]; then
+                echo "::error::backslashxx tidak dipakai untuk SuSFS"
+                exit 1
+              fi
+              KSU_URL="https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/setup.sh"
+              KSU_BRANCH="master"
+              ;;
+            *)
+              echo "::error::fork tidak dikenal: $KSU_FORK"
+              exit 1
+              ;;
+          esac
+          curl -LSs "$KSU_URL" | bash -s "$KSU_BRANCH"
+          [ ! -f drivers/kernelsu/Kconfig ] && { echo "::error::setup KSU gagal"; exit 1; }
+
+      - name: KernelSU compat fixes for kernel 4.4
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
+        working-directory: kernel
+        run: |
+          KFILES=$(find -L drivers/kernelsu -type f \( -name '*.c' -o -name '*.h' \))
+          for mk in drivers/kernelsu/Kbuild drivers/kernelsu/Makefile; do
+            if [ -f "$mk" ] && ! grep -q 'std=gnu11' "$mk"; then
+              echo 'ccflags-y += -std=gnu11' >> "$mk"
+              break
+            fi
+          done
+          sed -i --follow-symlinks '/MODULE_IMPORT_NS/d' $KFILES
+          sed -i --follow-symlinks 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' $KFILES
+          sed -i --follow-symlinks '/#include <linux\/sched\/task_stack.h>/d' $KFILES
+          sed -i --follow-symlinks 's/full_name_hash(NULL, dirpath, strlen(dirpath))/full_name_hash((const unsigned char *)dirpath, strlen(dirpath))/' $KFILES
+          sed -i --follow-symlinks 's/group_info->gid\[i\]/group_info->blocks[i]/' $KFILES
+          sed -i --follow-symlinks 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' $KFILES
+
+      - name: Apply SuSFS kernel patch + inline hooks
+        if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' }}
+        working-directory: kernel
+        run: |
+          set -e
+          BUILDER=/tmp/builder/Patches
+          PATCH=""
+          [ -f susfs_x00td_44.patch ] && PATCH="$PWD/susfs_x00td_44.patch"
+          [ -z "$PATCH" ] && [ -f "$BUILDER/Patch/susfs_patch_to_4.4.patch" ] && PATCH="$BUILDER/Patch/susfs_patch_to_4.4.patch"
+          [ -z "$PATCH" ] && { echo "::error::patch SuSFS tidak ditemukan"; exit 1; }
+          if git apply -R --check "$PATCH" 2>/dev/null; then
+            echo "SuSFS sudah ter-apply, skip"
+          elif git apply --check "$PATCH" 2>/dev/null; then
+            git apply --whitespace=nowarn "$PATCH"
+          else
+            patch -p1 -N -F3 --no-backup-if-mismatch < "$PATCH" || { find . -name '*.rej' -print -exec cat {} \;; exit 1; }
+          fi
+          cp "$BUILDER/susfs_inline_hook_patches.sh" ./
+          bash susfs_inline_hook_patches.sh ./
+          rm -f susfs_inline_hook_patches.sh
+          MISSING=""
+          for f in fs/exec.c fs/open.c fs/read_write.c fs/stat.c drivers/input/input.c kernel/reboot.c; do
+            grep -q "ksu_" "$f" || MISSING="$MISSING hook-ksu:$f"
+          done
+          grep -q "susfs_def.h" fs/stat.c || MISSING="$MISSING include-susfs_def.h:fs/stat.c"
+          grep -q "CONFIG_KSU_SUSFS" fs/namespace.c || MISSING="$MISSING susfs:fs/namespace.c"
+          [ -n "$MISSING" ] && { echo "::error::hook belum lengkap:$MISSING"; exit 1; }
+
+      - name: Clang compat patches for kernel 4.4
+        if: ${{ github.event.inputs.toolchain == 'clang' }}
+        working-directory: kernel
+        run: |
+          set -e
+          echo "Menerapkan patch kompatibilitas Clang → kernel 4.4..."
+          # 1) missing -mno-fp-regs support
+          sed -i 's/-mno-fp-regs//g' arch/arm64/Makefile
+          # 2) __asm__ inline yang bikin Clang error
+          find . -name '*.c' -path '*/kernel/*' -o -name '*.c' -path '*/mm/*' | while read f; do
+            [ -f "$f" ] || continue
+            sed -i 's/\(__always_inline__\s*inline\)/inline __always_inline/g' "$f"
+          done
+          # 3) BUILD_BUG_ON Clang di 4.4
+          sed -i 's/BUILD_BUG_ON(/BUILD_BUG_ON(/g' include/linux/bug.h 2>/dev/null || true
+          # 4) pragma clang/gnu
+          grep -rl 'pragma GCC' . --include='*.c' --include='*.h' 2>/dev/null | while read f; do
+            echo '#pragma clang diagnostic push' > /tmp/pragma_tmp
+            cat "$f" >> /tmp/pragma_tmp
+            echo '#pragma clang diagnostic pop' >> /tmp/pragma_tmp
+          done || true
+          echo "Patch Clang selesai"
+
+      - name: Select toolchain
+        id: tc
+        env:
+          TOOLCHAIN: ${{ github.event.inputs.toolchain }}
+        run: |
+          echo "cache_dir=$HOME/aosp-tc" >> "$GITHUB_OUTPUT"
+          echo "gcc_dir=$HOME/aosp-tc/gcc-arm64" >> "$GITHUB_OUTPUT"
+          echo "gcc32_dir=$HOME/aosp-tc/gcc-arm" >> "$GITHUB_OUTPUT"
+          case "$TOOLCHAIN" in
+            clang)
+              echo "clang_dir=$HOME/aosp-tc/clang-r353983c" >> "$GITHUB_OUTPUT"
+              echo "key=aosp-tc-clang-r353983c-gcc49-a10" >> "$GITHUB_OUTPUT"
+              ;;
+            gcc49|*)
+              echo "clang_dir=" >> "$GITHUB_OUTPUT"
+              echo "key=aosp-tc-gcc49-a10" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache44-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
+          restore-keys: |
+            ccache44-${{ github.event.inputs.toolchain }}-
+
+      - name: Cache toolchain
+        id: tc_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.tc.outputs.cache_dir }}
+          key: ${{ steps.tc.outputs.key }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache curl flex git patch \
+            libncurses-dev libssl-dev zstd wget xz-utils
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Fetch toolchain
+        if: ${{ steps.tc_cache.outputs.cache-hit != 'true' }}
+        env:
+          TOOLCHAIN: ${{ github.event.inputs.toolchain }}
+          GCC_DIR: ${{ steps.tc.outputs.gcc_dir }}
+          GCC32_DIR: ${{ steps.tc.outputs.gcc32_dir }}
+          CLANG_DIR: ${{ steps.tc.outputs.clang_dir }}
+        run: |
+          mkdir -p "$HOME/aosp-tc"
+          echo "GCC 4.9 aarch64 (lineage-19.1)..."
+          git clone -q --depth 1 -b lineage-19.1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            "$GCC_DIR"
+          rm -rf "$GCC_DIR/.git"
+
+          echo "GCC 4.9 arm32 (lineage-19.1)..."
+          git clone -q --depth 1 -b lineage-19.1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+            "$GCC32_DIR"
+          rm -rf "$GCC32_DIR/.git"
+
+          if [ "$TOOLCHAIN" = "clang" ]; then
+            echo "Clang r353983c (lineage-19.1)..."
+            git clone -q --depth 1 -b lineage-19.1 \
+              https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r353983c \
+              "$CLANG_DIR"
+            rm -rf "$CLANG_DIR/.git"
+          fi
+
+      - name: Setup toolchain & optimasi cepat
+        env:
+          TOOLCHAIN: ${{ github.event.inputs.toolchain }}
+          KCFLAGS_W: ${{ github.event.inputs.kcflags_w }}
+          GCC_DIR: ${{ steps.tc.outputs.gcc_dir }}
+          GCC32_DIR: ${{ steps.tc.outputs.gcc32_dir }}
+          CLANG_DIR: ${{ steps.tc.outputs.clang_dir }}
+        run: |
+          # PATH
+          case "$TOOLCHAIN" in
+            clang)
+              echo "$CLANG_DIR/bin" >> "$GITHUB_PATH"
+              echo "$GCC_DIR/bin" >> "$GITHUB_PATH"
+              echo "$GCC32_DIR/bin" >> "$GITHUB_PATH"
+              echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$GCC_DIR/bin/aarch64-linux-android- CROSS_COMPILE_ARM32=$GCC32_DIR/bin/arm-linux-androideabi- -Wno-unresolved-symbols" >> "$GITHUB_ENV"
+              ;;
+            gcc49|*)
+              echo "$GCC_DIR/bin" >> "$GITHUB_PATH"
+              echo "$GCC32_DIR/bin" >> "$GITHUB_PATH"
+              echo "TC_MAKE_ARGS=CC=aarch64-linux-android-gcc CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-" >> "$GITHUB_ENV"
+              ;;
+          esac
+          # ccache
+          echo "/usr/lib/ccache" >> "$GITHUB_PATH"
+          for name in aarch64-linux-android-gcc aarch64-linux-android-g++ \
+                      arm-linux-androideabi-gcc arm-linux-androideabi-g++ \
+                      clang clang++; do
+            [ ! -e "/usr/lib/ccache/$name" ] && sudo ln -sf /usr/bin/ccache "/usr/lib/ccache/$name" 2>/dev/null || true
+          done
+          # KCFLAGS
+          if [ "$KCFLAGS_W" = "true" ]; then
+            echo "TC_KCFLAGS=-w" >> "$GITHUB_ENV"
+          else
+            echo "TC_KCFLAGS=-Wno-error" >> "$GITHUB_ENV"
+          fi
+          # Ccache besar biar cepat
+          ccache --max-size=5G
+          ccache --zero-stats
+
+      - name: Make defconfig
+        working-directory: kernel
+        env:
+          ENABLE_KSU: ${{ github.event.inputs.enable_ksu }}
+          ENABLE_SUSFS: ${{ github.event.inputs.enable_susfs }}
+          DEFCONFIG_NAME: ${{ github.event.inputs.defconfig }}
+          KSU_DEBUG: ${{ github.event.inputs.ksu_debug }}
+        run: |
+          set -e
+          DEFCONFIG_PATH=$(find arch/arm64/configs -name "$DEFCONFIG_NAME" | head -1)
+          [ -z "$DEFCONFIG_PATH" ] && { echo "::error::$DEFCONFIG_NAME tidak ditemukan"; exit 1; }
+          DEFCONFIG_REL="${DEFCONFIG_PATH#arch/arm64/configs/}"
+          make ARCH=arm64 O=out $TC_MAKE_ARGS "$DEFCONFIG_REL"
+          if [ "$ENABLE_KSU" = "true" ] && [ "$ENABLE_SUSFS" = "true" ]; then
+            {
+              echo "CONFIG_KSU=y"
+              echo "CONFIG_KSU_SUSFS=y"
+              echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
+              echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
+              echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
+              echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
+              echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
+              echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
+              echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
+              echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
+              echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
+            } >> out/.config
+          elif [ "$ENABLE_KSU" = "true" ]; then
+            { echo "CONFIG_KSU=y"; echo "CONFIG_KSU_MANUAL_HOOK=y"; } >> out/.config
+          fi
+          if [ "$ENABLE_KSU" = "true" ]; then
+            [ "$KSU_DEBUG" = "true" ] && echo "CONFIG_KSU_DEBUG=y" >> out/.config || echo "# CONFIG_KSU_DEBUG is not set" >> out/.config
+          fi
+          make ARCH=arm64 O=out $TC_MAKE_ARGS olddefconfig
+
+      - name: Build kernel (cepat)
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 O=out $TC_MAKE_ARGS KCFLAGS="$TC_KCFLAGS" -j"$(nproc)" Image.gz dtbs
+
+      - name: Pack Image.gz-dtb — khusus X00TD
+        working-directory: kernel
+        run: |
+          DTB_PATH=""
+          # Pola khusus X00TD / sdm660
+          for pattern in "asus/X00TD" "sdm660-asus-x00td" "sdm660-x00td" "sdm660"; do
+            FOUND=$(find out/arch/arm64/boot/dts -name "*${pattern}*.dtb" | sort | head -1)
+            if [ -n "$FOUND" ]; then
+              DTB_PATH="$FOUND"
+              echo "DTB ketemu: $DTB_PATH"
+              break
+            fi
+          done
+          [ -z "$DTB_PATH" ] && { echo "::error::DTB X00TD/sdm660 tidak ketemu"; exit 1; }
+          cat out/arch/arm64/boot/Image.gz "$DTB_PATH" > out/arch/arm64/boot/Image.gz-dtb
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Verify
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
+        working-directory: kernel
+        run: |
+          grep -q "^CONFIG_KSU=y" out/.config && grep -qi "ksu" out/System.map && echo "OK KSU" || exit 1
+          if [ "${{ github.event.inputs.enable_susfs }}" = "true" ]; then
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config && grep -qi "susfs" out/System.map && echo "OK SuSFS" || exit 1
+          fi
+
+      - name: Upload
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: X00TD-4.4-A10A11-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
+          path: kernel/out/arch/arm64/boot/Image.gz-dtb
