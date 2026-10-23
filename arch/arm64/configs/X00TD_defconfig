@@ -826,3 +826,13 @@ CONFIG_NF_NAT_REDIRECT=y
 # CONFIG_IP6_NF_NAT is not set
 CONFIG_CHARGING_AUTOCUT=y
 CONFIG_DYNAMIC_FSYNC=y
+
+# Turnoff info debug di binary
+# CONFIG_DEBUG_INFO is not set
+
+# Turnoff printk
+# CONFIG_PRINTK= is not set
+
+# = Turnoff debug print auto
+# CONFIG_DYNAMIC_DEBUG= is not set
+# CONFIG_DEBUG_FS= is not set
