@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS A10-A11
+name: Kernel Build X00TD 4.4 KSU SuSFS A10-A11 test
 on:
   workflow_dispatch:
     inputs:
