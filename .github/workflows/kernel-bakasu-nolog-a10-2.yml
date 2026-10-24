@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS A10 tes
+name: Kernel Build X00TD 4.4 KSU SuSFS no log
 on:
   workflow_dispatch:
     inputs:
@@ -15,7 +15,7 @@ on:
         required: true
         default: 'X00TD_defconfig'
       toolchain:
-        description: 'gnu = gcc bawaan Ubuntu (default, sama kayak yaml 4.4 lama) | llvm = Neutron clang 24 | gcc = EVA GCC'
+        description: 'gnu = gcc bawaan Ubuntu (default, sudah terbukti boot) | llvm = Proton clang 13 | gcc = Android GCC 4.9 (LineageOS)'
         type: choice
         default: 'gnu'
         options:
@@ -257,12 +257,14 @@ jobs:
         run: |
           case "$TOOLCHAIN" in
             llvm)
-              echo "dir=$HOME/neutron-clang" >> "$GITHUB_OUTPUT"
-              echo "key=llvm-24-neutron-06092026" >> "$GITHUB_OUTPUT"
+              # Proton clang 13 (cocok buat kernel 4.4, A10-A13)
+              echo "dir=$HOME/proton-clang" >> "$GITHUB_OUTPUT"
+              echo "key=llvm-proton-clang13-v1" >> "$GITHUB_OUTPUT"
               ;;
             gcc)
-              echo "dir=$HOME/gcc-arm64" >> "$GITHUB_OUTPUT"
-              echo "key=gcc-eva-arm64-06052026" >> "$GITHUB_OUTPUT"
+              # Android GCC 4.9 (LineageOS prebuilts): arm64 + arm32 di satu folder
+              echo "dir=$HOME/gcc49" >> "$GITHUB_OUTPUT"
+              echo "key=gcc-android49-lineage191-v1" >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "dir=" >> "$GITHUB_OUTPUT"
@@ -271,10 +273,11 @@ jobs:
           esac
           echo "Toolchain dipilih: $TOOLCHAIN"
       - name: Restore ccache
-        uses: actions/cache@v4
+        id: ccache_restore
+        uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
-          key: ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-${{ github.run_id }}
+          key: ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-
             ccache44-${{ github.event.inputs.toolchain }}-
@@ -298,27 +301,27 @@ jobs:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
           if [ "$TOOLCHAIN" = "llvm" ]; then
-            echo "Downloading Neutron clang..."
-            mkdir -p "$HOME/neutron-clang"
-            wget -q "https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/06092026/neutron-clang-06092026.tar.zst" -O /tmp/clang.tar.zst
-            tar -xf /tmp/clang.tar.zst -C "$HOME/neutron-clang"
-            rm -f /tmp/clang.tar.zst
-            if [ ! -x "$HOME/neutron-clang/bin/clang" ]; then
-              echo "::error::bin/clang tidak ada setelah extract Neutron"
-              ls -la "$HOME/neutron-clang" || true
+            echo "Cloning Proton clang 13..."
+            git clone -q --depth=1 https://github.com/kdrag0n/proton-clang "$HOME/proton-clang"
+            rm -rf "$HOME/proton-clang/.git"
+            if [ ! -x "$HOME/proton-clang/bin/clang" ]; then
+              echo "::error::bin/clang tidak ada setelah clone Proton clang"
+              ls -la "$HOME/proton-clang" || true
               exit 1
             fi
+            "$HOME/proton-clang/bin/clang" --version | head -1
           else
-            echo "Downloading EVA GCC..."
-            cd "$HOME"
-            wget -q "https://github.com/mvaisakh/gcc-build/releases/download/06052026/eva-gcc-arm64-06052026.xz" -O gcc.tar.xz
-            tar -xf gcc.tar.xz
-            rm -f gcc.tar.xz
-            if [ ! -d "$HOME/gcc-arm64/bin" ]; then
-              echo "::error::folder gcc-arm64/bin tidak ada setelah extract EVA GCC"
-              ls -la "$HOME" || true
+            echo "Cloning Android GCC 4.9 (LineageOS lineage-19.1)..."
+            mkdir -p "$HOME/gcc49"
+            git clone -q --depth=1 -b lineage-19.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 "$HOME/gcc49/arm64"
+            git clone -q --depth=1 -b lineage-19.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 "$HOME/gcc49/arm32"
+            rm -rf "$HOME/gcc49/arm64/.git" "$HOME/gcc49/arm32/.git"
+            if [ ! -x "$HOME/gcc49/arm64/bin/aarch64-linux-android-gcc" ]; then
+              echo "::error::aarch64-linux-android-gcc tidak ada setelah clone"
+              ls -la "$HOME/gcc49/arm64" || true
               exit 1
             fi
+            "$HOME/gcc49/arm64/bin/aarch64-linux-android-gcc" --version | head -1
           fi
       - name: Setup toolchain environment
         env:
@@ -327,37 +330,56 @@ jobs:
         run: |
           case "$TOOLCHAIN" in
             llvm)
-              TC="$HOME/neutron-clang"
+              TC="$HOME/proton-clang"
               echo "$TC/bin" >> "$GITHUB_PATH"
               echo "LD_LIBRARY_PATH=$TC/lib:$TC/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+              # binutils (aarch64-linux-gnu-*, arm-linux-gnueabi-*) ikut paket Proton, jadi CROSS_COMPILE ketemu di $TC/bin
               echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
+              CCACHE_LINKS="clang"
               ;;
             gcc)
-              TC="$HOME/gcc-arm64"
-              prefix=""
-              for p in aarch64-linux-android- aarch64-linux-gnu- aarch64-elf- aarch64-linux-; do
-                if [ -f "$TC/bin/${p}gcc" ]; then prefix="$p"; break; fi
-              done
-              if [ -z "$prefix" ]; then
-                echo "::error::gcc aarch64 tidak ditemukan di $TC/bin"
-                ls -la "$TC/bin" || true
-                exit 1
-              fi
-              echo "$TC/bin" >> "$GITHUB_PATH"
-              echo "TC_MAKE_ARGS=CC=${prefix}gcc CROSS_COMPILE=${prefix} CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
+              echo "$HOME/gcc49/arm64/bin" >> "$GITHUB_PATH"
+              echo "$HOME/gcc49/arm32/bin" >> "$GITHUB_PATH"
+              echo "TC_MAKE_ARGS=CC=aarch64-linux-android-gcc CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-" >> "$GITHUB_ENV"
+              CCACHE_LINKS="aarch64-linux-android-gcc arm-linux-androideabi-gcc"
               ;;
             *)
               echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
+              CCACHE_LINKS="aarch64-linux-gnu-gcc arm-linux-gnueabi-gcc"
               ;;
           esac
-          # ccache lewat symlink dir (ditaruh paling depan di PATH), jadi CC tidak perlu pakai spasi
-          echo "/usr/lib/ccache" >> "$GITHUB_PATH"
-          if [ "$KCFLAGS_W" = "true" ] || [ "$TOOLCHAIN" = "gcc" ]; then
-            echo "TC_KCFLAGS=-w" >> "$GITHUB_ENV"
-          else
-            echo "TC_KCFLAGS=-Wno-error -Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types" >> "$GITHUB_ENV"
+          # ccache: bikin symlink sendiri per compiler (ditaruh paling depan di PATH),
+          # jadi CC tidak perlu pakai spasi dan jalan juga buat clang / gcc 4.9
+          mkdir -p "$HOME/ccache-bin"
+          CCACHE_EXE="$(command -v ccache)"
+          for l in $CCACHE_LINKS; do
+            ln -sf "$CCACHE_EXE" "$HOME/ccache-bin/$l"
+          done
+          echo "$HOME/ccache-bin" >> "$GITHUB_PATH"
+          # setting biar cache hit walau path/mtime compiler beda tiap run
+          {
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+            echo "CCACHE_NOHASHDIR=true"
+            echo "CCACHE_COMPILERCHECK=%compiler% --version"
+            echo "CCACHE_SLOPPINESS=time_macros"
+          } >> "$GITHUB_ENV"
+          case "$TOOLCHAIN" in
+            gcc)
+              # GCC 4.9 tidak kenal flag -Wno-error=... yang baru, jadi pakai -w saja
+              TC_KCFLAGS="-w"
+              ;;
+            llvm)
+              TC_KCFLAGS="-Wno-error"
+              ;;
+            *)
+              TC_KCFLAGS="-Wno-error -Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types"
+              ;;
+          esac
+          if [ "$KCFLAGS_W" = "true" ]; then
+            TC_KCFLAGS="-w"
           fi
-          ccache --max-size=2G
+          echo "TC_KCFLAGS=$TC_KCFLAGS" >> "$GITHUB_ENV"
+          ccache --max-size=3G
           ccache --zero-stats
       - name: Debug - Check files
         run: |
@@ -366,6 +388,7 @@ jobs:
           echo "KSU   : ${{ github.event.inputs.enable_ksu }} | SuSFS: ${{ github.event.inputs.enable_susfs }} | fork: ${{ github.event.inputs.ksu_fork }}"
           echo "TC_MAKE_ARGS=$TC_MAKE_ARGS"
           echo "TC_KCFLAGS=$TC_KCFLAGS"
+          echo "ccache cache-hit: ${{ steps.ccache_restore.outputs.cache-hit }} | matched key: ${{ steps.ccache_restore.outputs.cache-matched-key }}"
           FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
           [ -n "$FOUND" ] && echo "FOUND: $FOUND" || echo "NOT FOUND: ${{ github.event.inputs.defconfig }}"
       - name: Make defconfig
@@ -412,9 +435,12 @@ jobs:
               echo "# CONFIG_KSU_DEBUG is not set" >> out/.config
             fi
           fi
+          # speed-up: debug info tidak ikut ke Image.gz-dtb, tapi bikin compile + link jauh lebih lama
+          echo "# CONFIG_DEBUG_INFO is not set" >> out/.config
           make ARCH=arm64 O=out $TC_MAKE_ARGS olddefconfig
           echo "=== CONFIG_KSU* setelah olddefconfig ==="
           grep -n "CONFIG_KSU" out/.config || echo "(tidak ada)"
+          grep -n "CONFIG_DEBUG_INFO" out/.config || true
       - name: Build kernel
         working-directory: kernel
         run: |
@@ -482,3 +508,9 @@ jobs:
           name: Kernel-Build-X00TD-4.4-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.enable_ksu == 'true' && (github.event.inputs.enable_susfs == 'true' && format('KSU-SUSFS-{0}', github.event.inputs.ksu_fork) || format('KSU-{0}', github.event.inputs.ksu_fork)) || 'NOKSU' }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
+      - name: Save ccache (tetap disimpan walau build gagal)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-${{ github.run_id }}-${{ github.run_attempt }}
