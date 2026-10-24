@@ -20,8 +20,8 @@ on:
         default: 'gnu'
         options:
           - gnu
-          - proton clang 13
-          - gcc 4.9
+          - llvm
+          - gcc
       kcflags_w:
         description: 'Enable KCFLAGS=-w (tekan semua warning)'
         type: boolean
