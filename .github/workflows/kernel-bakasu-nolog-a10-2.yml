@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes
+name: Kernel Build X00TD 4.4 KSU SuSFS no log
 on:
   workflow_dispatch:
     inputs:
@@ -317,6 +317,9 @@ jobs:
               # ld Proton (binutils 2.36) tidak bisa baca libc Ubuntu baru (.relr.dyn), jadi tool host
               # (fixdep dll) harus pakai ld sistem. CROSS_COMPILE pakai binutils Ubuntu yang sudah terpasang.
               echo "TC_BIN=$TC/bin" >> "$GITHUB_ENV"
+              # runner punya clang sistem (versi baru) di /usr/bin. Karena PATH Proton ada di belakang,
+              # CCACHE_PATH memaksa ccache memanggil clang Proton, bukan clang sistem.
+              echo "CCACHE_PATH=$TC/bin" >> "$GITHUB_ENV"
               echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="clang"
               ;;
@@ -349,7 +352,7 @@ jobs:
               TC_KCFLAGS="-Wno-error"
               ;;
             llvm)
-              TC_KCFLAGS="-Wno-error"
+              TC_KCFLAGS="-Wno-error -Wno-error=incompatible-pointer-types"
               ;;
             *)
               TC_KCFLAGS="-Wno-error -Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types"
@@ -381,6 +384,7 @@ jobs:
         run: |
           set -e
           export PATH="$PATH${TC_BIN:+:$TC_BIN}"
+          if [ -n "$TC_BIN" ]; then echo "clang dipakai: $(command -v clang) -> $(CCACHE_DISABLE=1 clang --version | head -1)"; fi
           DEFCONFIG_PATH=$(find arch/arm64/configs -name "$DEFCONFIG_NAME" | head -1)
           [ -z "$DEFCONFIG_PATH" ] && { echo "::error::$DEFCONFIG_NAME tidak ditemukan"; exit 1; }
           DEFCONFIG_REL="${DEFCONFIG_PATH#arch/arm64/configs/}"
@@ -426,6 +430,13 @@ jobs:
         working-directory: kernel
         run: |
           export PATH="$PATH${TC_BIN:+:$TC_BIN}"
+          if [ -n "$TC_BIN" ]; then
+            echo "clang dipakai: $(command -v clang) -> $(CCACHE_DISABLE=1 clang --version | head -1)"
+            case "$(CCACHE_DISABLE=1 clang --version | head -1)" in
+              *"clang version 13."*) ;;
+              *) echo "::error::clang yang kepakai BUKAN Proton 13 (kemungkinan clang sistem runner)"; exit 1 ;;
+            esac
+          fi
           echo "CPU cores: $(nproc)"
           make ARCH=arm64 O=out $TC_MAKE_ARGS KCFLAGS="$TC_KCFLAGS" -j"$(nproc)" Image.gz dtbs
       - name: Pack Image.gz-dtb
