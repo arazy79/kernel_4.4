@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes
+name: Kernel Build X00TD 4.4 KSU SuSFS no log 10 tes
 on:
   workflow_dispatch:
     inputs:
@@ -20,8 +20,8 @@ on:
         default: 'gnu'
         options:
           - gnu
-          - Proton clang 13
-          - GCC 4.9
+          - llvm
+          - gcc
       kcflags_w:
         description: 'Enable KCFLAGS=-w (tekan semua warning)'
         type: boolean
@@ -251,27 +251,19 @@ jobs:
           rm -f syscall_hook_patches.sh
           grep -qiE "failed|warning" /tmp/hook.log && echo "::warning::script hook ngelaporin failed/warning, cek log di atas" || true
       - name: Select toolchain
-        id: tc
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
+          # llvm = Proton clang 13 | gcc = Android GCC 4.9 | gnu = gcc Ubuntu
           case "$TOOLCHAIN" in
-            llvm)
-              # Proton clang 13 (cocok buat kernel 4.4, A10-A13)
-              echo "dir=$HOME/proton-clang" >> "$GITHUB_OUTPUT"
-              echo "key=llvm-proton-clang13-v1" >> "$GITHUB_OUTPUT"
-              ;;
-            gcc)
-              # Android GCC 4.9 (LineageOS prebuilts): arm64 + arm32 di satu folder
-              echo "dir=$HOME/gcc49" >> "$GITHUB_OUTPUT"
-              echo "key=gcc-android49-lineage191-v1" >> "$GITHUB_OUTPUT"
+            gnu|llvm|gcc)
+              echo "Toolchain dipilih: $TOOLCHAIN"
               ;;
             *)
-              echo "dir=" >> "$GITHUB_OUTPUT"
-              echo "key=" >> "$GITHUB_OUTPUT"
+              echo "::error::toolchain tidak dikenal: '$TOOLCHAIN' (harus gnu / llvm / gcc)"
+              exit 1
               ;;
           esac
-          echo "Toolchain dipilih: $TOOLCHAIN"
       - name: Restore ccache
         id: ccache_restore
         uses: actions/cache/restore@v4
@@ -286,8 +278,10 @@ jobs:
         if: ${{ github.event.inputs.toolchain != 'gnu' }}
         uses: actions/cache@v4
         with:
-          path: ${{ steps.tc.outputs.dir }}
-          key: ${{ steps.tc.outputs.key }}
+          path: |
+            ~/proton-clang
+            ~/gcc49
+          key: toolchain44-${{ github.event.inputs.toolchain }}-v1
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
