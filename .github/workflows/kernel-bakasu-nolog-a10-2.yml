@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS no log 10 tes
+name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes
 on:
   workflow_dispatch:
     inputs:
@@ -15,7 +15,7 @@ on:
         required: true
         default: 'X00TD_defconfig'
       toolchain:
-        description: 'gnu = gcc bawaan Ubuntu (default, sudah terbukti boot) | llvm = Proton clang 13 | gcc = Android GCC 4.9 (LineageOS)'
+        description: 'gnu = gcc 13 bawaan Ubuntu (default, sudah terbukti boot) | llvm = Proton clang 13 | gcc = GCC 9 (Ubuntu cross, lewat apt)'
         type: choice
         default: 'gnu'
         options:
@@ -254,7 +254,7 @@ jobs:
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
-          # llvm = Proton clang 13 | gcc = Android GCC 4.9 | gnu = gcc Ubuntu
+          # llvm = Proton clang 13 | gcc = GCC 9 (apt) | gnu = gcc 13 Ubuntu
           case "$TOOLCHAIN" in
             gnu|llvm|gcc)
               echo "Toolchain dipilih: $TOOLCHAIN"
@@ -275,13 +275,11 @@ jobs:
             ccache44-${{ github.event.inputs.toolchain }}-
       - name: Cache toolchain
         id: tc_cache
-        if: ${{ github.event.inputs.toolchain != 'gnu' }}
+        if: ${{ github.event.inputs.toolchain == 'llvm' }}
         uses: actions/cache@v4
         with:
-          path: |
-            ~/proton-clang
-            ~/gcc49
-          key: toolchain44-${{ github.event.inputs.toolchain }}-v1
+          path: ~/proton-clang
+          key: toolchain44-llvm-proton13-v1
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
@@ -289,34 +287,24 @@ jobs:
             bc bison build-essential ccache curl flex git patch \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev zstd wget xz-utils
-      - name: Fetch toolchain
-        if: ${{ github.event.inputs.toolchain != 'gnu' && steps.tc_cache.outputs.cache-hit != 'true' }}
-        env:
-          TOOLCHAIN: ${{ github.event.inputs.toolchain }}
+      - name: Install GCC 9 cross (toolchain gcc)
+        if: ${{ github.event.inputs.toolchain == 'gcc' }}
         run: |
-          if [ "$TOOLCHAIN" = "llvm" ]; then
-            echo "Cloning Proton clang 13..."
-            git clone -q --depth=1 https://github.com/kdrag0n/proton-clang "$HOME/proton-clang"
-            rm -rf "$HOME/proton-clang/.git"
-            if [ ! -x "$HOME/proton-clang/bin/clang" ]; then
-              echo "::error::bin/clang tidak ada setelah clone Proton clang"
-              ls -la "$HOME/proton-clang" || true
-              exit 1
-            fi
-            "$HOME/proton-clang/bin/clang" --version | head -1
-          else
-            echo "Cloning Android GCC 4.9 (LineageOS lineage-19.1)..."
-            mkdir -p "$HOME/gcc49"
-            git clone -q --depth=1 -b lineage-19.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 "$HOME/gcc49/arm64"
-            git clone -q --depth=1 -b lineage-19.1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 "$HOME/gcc49/arm32"
-            rm -rf "$HOME/gcc49/arm64/.git" "$HOME/gcc49/arm32/.git"
-            if [ ! -x "$HOME/gcc49/arm64/bin/aarch64-linux-android-gcc" ]; then
-              echo "::error::aarch64-linux-android-gcc tidak ada setelah clone"
-              ls -la "$HOME/gcc49/arm64" || true
-              exit 1
-            fi
-            "$HOME/gcc49/arm64/bin/aarch64-linux-android-gcc" --version | head -1
+          sudo apt-get install -y --no-install-recommends \
+            gcc-9-aarch64-linux-gnu gcc-9-arm-linux-gnueabi
+          aarch64-linux-gnu-gcc-9 --version | head -1
+      - name: Fetch toolchain (Proton clang 13)
+        if: ${{ github.event.inputs.toolchain == 'llvm' && steps.tc_cache.outputs.cache-hit != 'true' }}
+        run: |
+          echo "Cloning Proton clang 13..."
+          git clone -q --depth=1 https://github.com/kdrag0n/proton-clang "$HOME/proton-clang"
+          rm -rf "$HOME/proton-clang/.git"
+          if [ ! -x "$HOME/proton-clang/bin/clang" ]; then
+            echo "::error::bin/clang tidak ada setelah clone Proton clang"
+            ls -la "$HOME/proton-clang" || true
+            exit 1
           fi
+          "$HOME/proton-clang/bin/clang" --version | head -1
       - name: Setup toolchain environment
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
@@ -325,17 +313,16 @@ jobs:
           case "$TOOLCHAIN" in
             llvm)
               TC="$HOME/proton-clang"
-              echo "$TC/bin" >> "$GITHUB_PATH"
-              echo "LD_LIBRARY_PATH=$TC/lib:$TC/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-              # binutils (aarch64-linux-gnu-*, arm-linux-gnueabi-*) ikut paket Proton, jadi CROSS_COMPILE ketemu di $TC/bin
+              # PATH Proton SENGAJA ditaruh di belakang (lewat TC_BIN, di-export di step make).
+              # ld Proton (binutils 2.36) tidak bisa baca libc Ubuntu baru (.relr.dyn), jadi tool host
+              # (fixdep dll) harus pakai ld sistem. CROSS_COMPILE pakai binutils Ubuntu yang sudah terpasang.
+              echo "TC_BIN=$TC/bin" >> "$GITHUB_ENV"
               echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="clang"
               ;;
             gcc)
-              echo "$HOME/gcc49/arm64/bin" >> "$GITHUB_PATH"
-              echo "$HOME/gcc49/arm32/bin" >> "$GITHUB_PATH"
-              echo "TC_MAKE_ARGS=CC=aarch64-linux-android-gcc CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-" >> "$GITHUB_ENV"
-              CCACHE_LINKS="aarch64-linux-android-gcc arm-linux-androideabi-gcc"
+              echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc-9 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
+              CCACHE_LINKS="aarch64-linux-gnu-gcc-9"
               ;;
             *)
               echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
@@ -343,7 +330,7 @@ jobs:
               ;;
           esac
           # ccache: bikin symlink sendiri per compiler (ditaruh paling depan di PATH),
-          # jadi CC tidak perlu pakai spasi dan jalan juga buat clang / gcc 4.9
+          # jadi CC tidak perlu pakai spasi dan jalan juga buat clang / gcc-9
           mkdir -p "$HOME/ccache-bin"
           CCACHE_EXE="$(command -v ccache)"
           for l in $CCACHE_LINKS; do
@@ -359,8 +346,7 @@ jobs:
           } >> "$GITHUB_ENV"
           case "$TOOLCHAIN" in
             gcc)
-              # GCC 4.9 tidak kenal flag -Wno-error=... yang baru, jadi pakai -w saja
-              TC_KCFLAGS="-w"
+              TC_KCFLAGS="-Wno-error"
               ;;
             llvm)
               TC_KCFLAGS="-Wno-error"
@@ -394,6 +380,7 @@ jobs:
           KSU_DEBUG: ${{ github.event.inputs.ksu_debug }}
         run: |
           set -e
+          export PATH="$PATH${TC_BIN:+:$TC_BIN}"
           DEFCONFIG_PATH=$(find arch/arm64/configs -name "$DEFCONFIG_NAME" | head -1)
           [ -z "$DEFCONFIG_PATH" ] && { echo "::error::$DEFCONFIG_NAME tidak ditemukan"; exit 1; }
           DEFCONFIG_REL="${DEFCONFIG_PATH#arch/arm64/configs/}"
@@ -438,6 +425,7 @@ jobs:
       - name: Build kernel
         working-directory: kernel
         run: |
+          export PATH="$PATH${TC_BIN:+:$TC_BIN}"
           echo "CPU cores: $(nproc)"
           make ARCH=arm64 O=out $TC_MAKE_ARGS KCFLAGS="$TC_KCFLAGS" -j"$(nproc)" Image.gz dtbs
       - name: Pack Image.gz-dtb
