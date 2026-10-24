@@ -121,7 +121,7 @@ jobs:
             exit 1
           fi
 
-            - name: KernelSU compat fixes for kernel 4.4
+      - name: KernelSU compat fixes for kernel 4.4
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         run: |
@@ -140,6 +140,16 @@ jobs:
           sed -i --follow-symlinks 's/group_info->gid\[i\]/group_info->blocks[i]/' $KFILES
           sed -i --follow-symlinks 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' $KFILES
           echo "compat fixes selesai"
+
+      - name: Fix DEFINE_MUTEX static (khusus kernel 4.4)
+        if: ${{ github.event.inputs.enable_ksu == 'true' }}
+        working-directory: kernel
+        run: |
+          FILE=drivers/kernelsu/policy/allowlist.c
+          if [ -f "$FILE" ]; then
+            sed -i 's/static DEFINE_MUTEX(allowlist_mutex);/DEFINE_MUTEX(allowlist_mutex);/' "$FILE"
+            echo "Fixed allowlist.c: hapus 'static' di DEFINE_MUTEX"
+          fi
 
       - name: Fix DEFINE_MUTEX static (khusus kernel 4.4)
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
