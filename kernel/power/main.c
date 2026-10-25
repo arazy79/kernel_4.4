@@ -15,33 +15,10 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
-#include <linux/jiffies.h>
 
 #include "power.h"
 
 DEFINE_MUTEX(pm_mutex);
-
-/* --- MULAI CODINGAN SPOOFING --- */
-static u64 fake_ds_total_ms = 0;
-static unsigned long fake_ds_start_jiffies = 0;
-static bool fake_ds_is_sleeping = false;
-
-void nvt_fake_deep_sleep_start(void) {
-	if (!fake_ds_is_sleeping) {
-		fake_ds_start_jiffies = jiffies;
-		fake_ds_is_sleeping = true;
-	}
-}
-EXPORT_SYMBOL(nvt_fake_deep_sleep_start);
-
-void nvt_fake_deep_sleep_end(void) {
-	if (fake_ds_is_sleeping) {
-		fake_ds_total_ms += jiffies_to_msecs(jiffies - fake_ds_start_jiffies);
-		fake_ds_is_sleeping = false;
-	}
-}
-EXPORT_SYMBOL(nvt_fake_deep_sleep_end);
-/* --- SELESAI CODINGAN SPOOFING --- */
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -188,11 +165,6 @@ static char *suspend_step_name(enum suspend_stat_step step)
 static int suspend_stats_show(struct seq_file *s, void *unused)
 {
 	int i, index, last_dev, last_errno, last_step;
-	/* --- SPOOFING VARIABLE --- */
-	u64 current_fake = fake_ds_total_ms;
-	if (fake_ds_is_sleeping) {
-		current_fake += jiffies_to_msecs(jiffies - fake_ds_start_jiffies);
-	}
 
 	last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
 	last_dev %= REC_FAILED_NUM;
@@ -201,8 +173,8 @@ static int suspend_stats_show(struct seq_file *s, void *unused)
 	last_step = suspend_stats.last_failed_step + REC_FAILED_NUM - 1;
 	last_step %= REC_FAILED_NUM;
 	seq_printf(s, "%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n"
-			"%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %lld\n",
-			"success", 9999, /* Spoofed success */
+			"%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n",
+			"success", suspend_stats.success,
 			"fail", suspend_stats.fail,
 			"failed_freeze", suspend_stats.failed_freeze,
 			"failed_prepare", suspend_stats.failed_prepare,
@@ -215,8 +187,7 @@ static int suspend_stats_show(struct seq_file *s, void *unused)
 			"failed_resume_early",
 				suspend_stats.failed_resume_early,
 			"failed_resume_noirq",
-				suspend_stats.failed_resume_noirq,
-			"total_time", current_fake); /* Spoofed total time */
+				suspend_stats.failed_resume_noirq);
 	seq_printf(s,	"failures:\n  last_failed_dev:\t%-s\n",
 			suspend_stats.failed_devs[last_dev]);
 	for (i = 1; i < REC_FAILED_NUM; i++) {
@@ -276,7 +247,7 @@ late_initcall(pm_debugfs_init);
  * pm_print_times: print time taken by devices to suspend and resume.
  *
  * show() returns whether printing of suspend and resume times is enabled.
- * store() accepts 0 or 1.  0 disables printing and 1 enables printing.
+ * store() accepts 0 or 1.  0 disables printing and 1 enables it.
  */
 bool pm_print_times_enabled;
 
