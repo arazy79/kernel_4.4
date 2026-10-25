@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes 2
+name: Kernel Build X00TD 4.4 KSU SuSFS no log
 on:
   workflow_dispatch:
     inputs:
