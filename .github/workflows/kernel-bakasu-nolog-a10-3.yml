@@ -15,7 +15,7 @@ on:
         required: true
         default: 'X00TD_defconfig'
       toolchain:
-        description: 'gnu 13 = gcc 13 bawaan Ubuntu (sudah terbukti boot) | proton 13 = Proton clang 13 | gcc 9 = GCC 9'
+        description: 'gnu 13 = gcc 13 bawaan Ubuntu | proton 13 = Proton clang 13 | gcc 9 = GCC 9'
         type: choice
         default: 'proton 13'
         options:
@@ -27,15 +27,15 @@ on:
         type: boolean
         default: false
       enable_ksu:
-        description: 'Enable KernelSU (centang = ON)'
+        description: 'Enable KernelSU'
         type: boolean
         default: true
       enable_susfs:
-        description: 'Enable SuSFS (butuh KSU ON; fork harus bakasu atau sukisu)'
+        description: 'Enable SuSFS (butuh KSU ON)'
         type: boolean
         default: true
       ksu_fork:
-        description: 'Fork KernelSU. backslashxx hanya untuk SuSFS OFF'
+        description: 'Fork KernelSU'
         type: choice
         default: 'bakasu'
         options:
@@ -43,17 +43,18 @@ on:
           - sukisu
           - backslashxx
       bakasu_ref:
-        description: 'SHA BakaSU yang terbukti sukses — JANGAN ganti ke main'
+        description: 'SHA BakaSU yang terbukti sukses'
         required: true
         default: 'd5e9e025b8b49155f8014684d64c91742b465f65'
       builder_ref:
-        description: 'Ref repo builder — pin SHA biar konsisten'
+        description: 'SHA builder repo'
         required: true
         default: 'dcd789634247c77d8549a42aef232c680a905585'
       ksu_debug:
         description: 'Enable CONFIG_KSU_DEBUG'
         type: boolean
         default: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -61,6 +62,7 @@ jobs:
     env:
       TZ: Asia/Jakarta
       ARCH: arm64
+
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -89,10 +91,11 @@ jobs:
           KSU_FORK: ${{ github.event.inputs.ksu_fork }}
           BAKASU_REF: ${{ github.event.inputs.bakasu_ref }}
         run: |
+          set -e
           case "$KSU_FORK" in
             sukisu)
               KSU_URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/main/kernel/setup.sh"
-              KSU_BRANCH="builtin"
+              KSU_BRANCH="main"
               KSU_REPO="https://github.com/SukiSU-Ultra/SukiSU-Ultra"
               ;;
             bakasu)
@@ -114,29 +117,45 @@ jobs:
               exit 1
               ;;
           esac
+
           echo "::group::KernelSU setup"
           echo "KSU script : $KSU_URL"
           echo "KSU ref    : $KSU_BRANCH"
+
           if ! curl -fLSs --retry 3 --retry-delay 2 -o /tmp/ksu_setup.sh "$KSU_URL"; then
             echo "::error::Gagal download setup.sh — ref mungkin sudah dihapus"
             exit 1
           fi
+
           bash /tmp/ksu_setup.sh "$KSU_BRANCH"
+
           if [ -d KernelSU ]; then
             KSU_SHA="$(git -C KernelSU rev-parse HEAD)"
             echo "KSU commit : $KSU_SHA"
             echo "::notice::Salin SHA di atas ke bakasu_ref biar pin"
           fi
-          ls -la drivers/kernelsu || true
+
+          echo "--- Cek struktur folder ---"
+          ls -la drivers/kernelsu/ || true
+
+          if [ -f drivers/kernelsu/Kconfig ] || \
+             [ -f drivers/kernelsu/kernel/Kconfig ] || \
+             [ -f KernelSU/kernel/Kconfig ]; then
+            echo "✅ Kconfig OK"
+          else
+            echo "::error::Kconfig tidak ditemukan — cek lokasi lain:"
+            find . -name "Kconfig" -path "*kernelsu*" || true
+            exit 1
+          fi
+
           echo "::endgroup::"
-          [ ! -f drivers/kernelsu/Kconfig ] && echo "::error::Kconfig hilang, setup gagal" && exit 1
 
       - name: KernelSU compat fixes + paksa runner.elf
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         run: |
           KFILES=$(find -L drivers/kernelsu -type f \( -name '*.c' -o -name '*.h' \))
-          # C99/C11 untuk gcc 4.4
+
           for mk in drivers/kernelsu/Kbuild drivers/kernelsu/Makefile; do
             if [ -f "$mk" ] && ! grep -q 'std=gnu11' "$mk"; then
               echo 'ccflags-y += -std=gnu11' >> "$mk"
@@ -144,7 +163,7 @@ jobs:
               break
             fi
           done
-          # Fix header 4.4
+
           sed -i --follow-symlinks '/MODULE_IMPORT_NS/d' $KFILES
           sed -i --follow-symlinks 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' $KFILES
           sed -i --follow-symlinks '/#include <linux\/sched\/task_stack.h>/d' $KFILES
@@ -152,7 +171,6 @@ jobs:
           sed -i --follow-symlinks 's/group_info->gid\[i\]/group_info->blocks[i]/' $KFILES
           sed -i --follow-symlinks 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' $KFILES
 
-          # === TAMBAHAN: PAKSA runner.elf DIBUAT DULU BIAR PROTON NGELUARIN ERROR ===
           echo "Memastikan runner.elf siap..."
           if [ -d drivers/kernelsu/preinit ]; then
             cd drivers/kernelsu/preinit
@@ -164,6 +182,7 @@ jobs:
             [ -f runner.elf ] && echo "✅ runner.elf siap" || echo "⚠️ runner.elf belum ada"
             cd ../../..
           fi
+
           echo "compat fixes selesai"
 
       - name: Apply SuSFS patch + hooks
@@ -190,7 +209,6 @@ jobs:
             echo "SuSFS applied (patch -p1)"
           fi
 
-          # Fix SukiSU
           if [ "$KSU_FORK" = "sukisu" ] && [ -f "$BUILDER/Patch/sukisu_ultra_fixed.patch" ]; then
             awk '/^diff --git /{n++} n>0{print > sprintf("/tmp/sfix/part%02d.p", n)}' "$BUILDER/Patch/sukisu_ultra_fixed.patch"
             cd drivers/kernelsu
@@ -202,13 +220,11 @@ jobs:
             cd ../../..
           fi
 
-          # Inline hooks
           cp "$BUILDER/susfs_inline_hook_patches.sh" ./
           bash susfs_inline_hook_patches.sh ./ | tee /tmp/hook.log
           rm -f susfs_inline_hook_patches.sh
           grep -qiE "failed|warning" /tmp/hook.log && echo "::warning::Cek log hook di atas"
 
-          # Cek kelengkapan
           MISSING=""
           for f in fs/exec.c fs/open.c fs/read_write.c fs/stat.c drivers/input/input.c kernel/reboot.c; do
             grep -q "ksu_" "$f" || MISSING="$MISSING hook-ksu:$f"
@@ -223,7 +239,9 @@ jobs:
         working-directory: kernel
         run: |
           set -e
-          bash /tmp/builder/Patches/syscall_hook_patches.sh ./
+          cp /tmp/builder/Patches/syscall_hook_patches.sh ./
+          bash syscall_hook_patches.sh ./
+          rm -f syscall_hook_patches.sh
           echo "Manual hooks selesai"
 
       - name: Select toolchain
@@ -333,24 +351,28 @@ jobs:
           make ARCH=arm64 O=out $TC_MAKE_ARGS "$DEFCONFIG_REL"
 
           if [ "$ENABLE_KSU" = "true" ] && [ "$ENABLE_SUSFS" = "true" ]; then
-            echo "CONFIG_KSU=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> out/.config
-            echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> out/.config
+            {
+              echo "CONFIG_KSU=y"
+              echo "CONFIG_KSU_SUSFS=y"
+              echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
+              echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
+              echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
+              echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
+              echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
+              echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
+              echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
+              echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
+              echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
+            } >> out/.config
           elif [ "$ENABLE_KSU" = "true" ]; then
             echo "CONFIG_KSU=y" >> out/.config
             echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           fi
+
           if [ "$ENABLE_KSU" = "true" ]; then
             [ "$KSU_DEBUG" = "true" ] && echo "CONFIG_KSU_DEBUG=y" >> out/.config || echo "# CONFIG_KSU_DEBUG is not set" >> out/.config
           fi
+
           echo "# CONFIG_DEBUG_INFO is not set" >> out/.config
           make ARCH=arm64 O=out $TC_MAKE_ARGS olddefconfig
           grep -n "CONFIG_KSU" out/.config || true
