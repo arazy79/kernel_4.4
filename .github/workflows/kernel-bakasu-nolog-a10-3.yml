@@ -45,7 +45,7 @@ on:
       bakasu_ref:
         description: 'Ref BakaSU (branch/tag/SHA), cuma dipakai kalau fork = bakasu. Default main (branch sync-susfs sudah dihapus upstream). Kalau sudah sukses, pin ke SHA'
         required: true
-        default: 'main'
+        default: 'd5e9e025b8b49155f8014684d64c91742b465f65'
       sukisu_ref:
         description: 'Ref SukiSU-Ultra (branch/tag/SHA), cuma dipakai kalau fork = sukisu. Default = commit terakhir yang patch fix SukiSU dari builder masih bisa apply (21 Okt). builtin terbaru sudah bentrok'
         required: true
