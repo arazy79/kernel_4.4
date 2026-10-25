@@ -829,7 +829,7 @@ CONFIG_DYNAMIC_FSYNC=y
 # CONFIG_DEBUG_INFO is not set
 
 # Biarin PRINTK nyala biar dmesg bisa dibaca
-# CONFIG_PRINTK is not set
+CONFIG_PRINTK=y
 
 # = Turnoff debug print auto
 # CONFIG_DYNAMIC_DEBUG is not set
