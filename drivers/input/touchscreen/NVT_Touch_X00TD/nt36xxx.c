@@ -242,6 +242,12 @@ void nvt_irq_disable(void)
 // Huaqin add for ZQL1650-1072. by zhengwu.lu. at 2018/04/23  start
 extern int tp_status_fun(void);
 // Huaqin add for ZQL1650-1072. by zhengwu.lu. at 2018/04/23  end
+
+/* --- SPOOFING EXTERNS --- */
+extern void nvt_fake_deep_sleep_start(void);
+extern void nvt_fake_deep_sleep_end(void);
+/* ------------------------ */
+
 static const struct nvt_ts_mem_map NT36772_memory_map = {
 	.EVENT_BUF_ADDR           = 0x11E00,
 	.RAW_PIPE0_ADDR           = 0x10000,
@@ -2095,6 +2101,8 @@ static int32_t nvt_ts_suspend(struct device *dev)
 
 	NVT_LOG("end\n");
 
+	nvt_fake_deep_sleep_start(); /* MULAI SPOOFING */
+
 	return 0;
 }
 
@@ -2107,6 +2115,8 @@ return:
 *******************************************************/
 static int32_t nvt_ts_resume(struct device *dev)
 {
+	nvt_fake_deep_sleep_end(); /* STOP SPOOFING */
+
 // Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  start
 	struct nvt_ts_data *data = dev_get_drvdata(dev);
 	nvt_lcm_power_source_ctrl(data, 1);//enable vsp/vsn
