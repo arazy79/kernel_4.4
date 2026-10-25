@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS SUKISU
+name: Kernel Build X00TD 4.4 KSU SuSFS no log
 on:
   workflow_dispatch:
     inputs:
@@ -176,6 +176,20 @@ jobs:
           sed -i --follow-symlinks 's/group_info->gid\[i\]/group_info->blocks[i]/' $KFILES
           # security_add_hooks 2 argumen di 4.4
           sed -i --follow-symlinks 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' $KFILES
+          # <linux/static_call.h> baru ada di kernel 5.10+, tapi SukiSU meng-include-nya tanpa syarat.
+          # Stub ini bikin static_call jadi function pointer biasa (hasil kerjanya sama). Cuma dibuat kalau headernya tidak ada.
+          if [ ! -f include/linux/static_call.h ]; then
+            cat > include/linux/static_call.h <<'EOF'
+          #ifndef _KSU_STATIC_CALL_STUB_H
+          #define _KSU_STATIC_CALL_STUB_H
+          #define DECLARE_STATIC_CALL(name, func) extern typeof(func) *__ksu_sc_##name
+          #define DEFINE_STATIC_CALL(name, func) typeof(func) *__ksu_sc_##name = (func)
+          #define static_call(name) (*__ksu_sc_##name)
+          #define static_call_update(name, func) ((void)(__ksu_sc_##name = (func)))
+          #endif
+          EOF
+            echo "stub include/linux/static_call.h dibuat (kernel < 5.10)"
+          fi
           echo "compat fixes selesai"
       - name: Apply SuSFS kernel patch + inline hooks
         if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' }}
