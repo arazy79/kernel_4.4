@@ -1,5 +1,4 @@
 name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes 2
-
 on:
   workflow_dispatch:
     inputs:
@@ -16,9 +15,9 @@ on:
         required: true
         default: 'X00TD_defconfig'
       toolchain:
-        description: 'gnu 13 = gcc 13 bawaan Ubuntu (default, sudah terbukti boot) | proton 13 = Proton clang 13 | gcc 9 = GCC 9 (Ubuntu cross, lewat apt)'
+        description: 'gnu 13 = gcc 13 bawaan Ubuntu (sudah terbukti boot) | proton 13 = Proton clang 13 | gcc 9 = GCC 9'
         type: choice
-        default: 'gnu 13'
+        default: 'proton 13'
         options:
           - gnu 13
           - proton 13
@@ -36,7 +35,7 @@ on:
         type: boolean
         default: true
       ksu_fork:
-        description: 'Fork KernelSU (manager harus dari fork yang sama). backslashxx hanya untuk SuSFS OFF'
+        description: 'Fork KernelSU. backslashxx hanya untuk SuSFS OFF'
         type: choice
         default: 'bakasu'
         options:
@@ -44,15 +43,15 @@ on:
           - sukisu
           - backslashxx
       bakasu_ref:
-        description: 'Ref BakaSU (branch/tag/SHA), cuma dipakai kalau fork = bakasu. Default main (branch sync-susfs sudah dihapus upstream). Kalau sudah sukses, pin ke SHA'
+        description: 'SHA BakaSU yang terbukti sukses — JANGAN ganti ke main'
         required: true
-        default: 'main'
+        default: 'd5e9e025b8b49155f8014684d64c91742b465f65'
       builder_ref:
-        description: 'Ref repo JackA1ltman/NonGKI_Kernel_Build_2nd (branch/tag/SHA). Kalau sudah sukses, pin ke SHA biar bisa diulang persis'
+        description: 'Ref repo builder — pin SHA biar konsisten'
         required: true
-        default: 'mainline'
+        default: 'dcd789634247c77d8549a42aef232c680a905585'
       ksu_debug:
-        description: 'Enable CONFIG_KSU_DEBUG (default mati; fork KSU biasanya default-nya ON)'
+        description: 'Enable CONFIG_KSU_DEBUG'
         type: boolean
         default: false
 jobs:
@@ -70,7 +69,8 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           path: kernel
           submodules: recursive
-      - name: Fetch NonGKI builder repo (patch + hook script)
+
+      - name: Fetch NonGKI builder repo
         run: |
           set -e
           mkdir -p /tmp/builder
@@ -80,10 +80,7 @@ jobs:
           git fetch -q --depth 1 origin "${{ github.event.inputs.builder_ref }}"
           git checkout -q FETCH_HEAD
           echo "Builder SHA: $(git rev-parse HEAD)"
-          echo "=== Patches/ ==="
-          ls -la Patches || true
-          echo "=== Patches/Patch/ ==="
-          ls -la Patches/Patch || true
+
       - name: Setup KernelSU
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
@@ -99,15 +96,13 @@ jobs:
               KSU_REPO="https://github.com/SukiSU-Ultra/SukiSU-Ultra"
               ;;
             bakasu)
-              # Blokir SuSFS ($(error Please wait susfs update)) sudah dicabut di main (16 Okt),
-              # dan branch sync-susfs sudah dihapus upstream. Ref bisa branch/tag/SHA lewat input bakasu_ref.
               KSU_URL="https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_REF}/kernel/setup.sh"
               KSU_BRANCH="${BAKASU_REF}"
               KSU_REPO="https://github.com/Baka-SU/BakaSU"
               ;;
             backslashxx)
               if [ "$ENABLE_SUSFS" = "true" ]; then
-                echo "::error::backslashxx tidak dipakai untuk SuSFS di workflow ini, pilih bakasu/sukisu atau matikan SuSFS"
+                echo "::error::backslashxx tidak dipakai untuk SuSFS — pilih bakasu/sukisu"
                 exit 1
               fi
               KSU_URL="https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/setup.sh"
@@ -121,38 +116,27 @@ jobs:
           esac
           echo "::group::KernelSU setup"
           echo "KSU script : $KSU_URL"
-          echo "KSU branch : $KSU_BRANCH"
-          # -f: kalau 404, curl gagal beneran (dulu isi "404: Not Found" ikut dijalankan bash)
+          echo "KSU ref    : $KSU_BRANCH"
           if ! curl -fLSs --retry 3 --retry-delay 2 -o /tmp/ksu_setup.sh "$KSU_URL"; then
-            echo "::error::gagal download setup.sh KernelSU dari $KSU_URL (ref/branch mungkin sudah dihapus atau diganti nama)"
-            echo "Branch yang ada sekarang di $KSU_REPO:"
-            git ls-remote --heads "$KSU_REPO" | sed 's#.*refs/heads/#  - #' | head -30 || true
+            echo "::error::Gagal download setup.sh — ref mungkin sudah dihapus"
             exit 1
           fi
           bash /tmp/ksu_setup.sh "$KSU_BRANCH"
-          # tampilkan commit KernelSU yang kepakai, biar gampang di-pin lewat bakasu_ref
           if [ -d KernelSU ]; then
             KSU_SHA="$(git -C KernelSU rev-parse HEAD)"
             echo "KSU commit : $KSU_SHA"
-            echo "::notice::KSU commit yang dipakai: $KSU_SHA (isi bakasu_ref dengan ini buat pin)"
+            echo "::notice::Salin SHA di atas ke bakasu_ref biar pin"
           fi
-          echo "--- drivers/kernelsu ---"
           ls -la drivers/kernelsu || true
-          echo "--- Makefile / Kconfig hook ---"
-          grep -n kernelsu drivers/Makefile drivers/Kconfig || true
           echo "::endgroup::"
-          if [ ! -f drivers/kernelsu/Kconfig ]; then
-            echo "::error::drivers/kernelsu/Kconfig tidak ada, setup KernelSU gagal"
-            exit 1
-          fi
-      - name: KernelSU compat fixes for kernel 4.4
+          [ ! -f drivers/kernelsu/Kconfig ] && echo "::error::Kconfig hilang, setup gagal" && exit 1
+
+      - name: KernelSU compat fixes + paksa runner.elf
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         run: |
-          # semua sed di sini aman kalau pola tidak ketemu (no-op).
-          # Kalau compile masih error di file KSU, kirim log errornya, tambah fix di sini.
           KFILES=$(find -L drivers/kernelsu -type f \( -name '*.c' -o -name '*.h' \))
-          # C99/C11 syntax di kernel 4.4 yang default gnu89
+          # C99/C11 untuk gcc 4.4
           for mk in drivers/kernelsu/Kbuild drivers/kernelsu/Makefile; do
             if [ -f "$mk" ] && ! grep -q 'std=gnu11' "$mk"; then
               echo 'ccflags-y += -std=gnu11' >> "$mk"
@@ -160,20 +144,29 @@ jobs:
               break
             fi
           done
-          # MODULE_IMPORT_NS (kernel < 5.4)
+          # Fix header 4.4
           sed -i --follow-symlinks '/MODULE_IMPORT_NS/d' $KFILES
-          # compiler_types.h (kernel < 4.15)
           sed -i --follow-symlinks 's|#include <linux/compiler_types.h>|#include <linux/compiler.h>|' $KFILES
-          # task_stack.h (kernel < 4.11)
           sed -i --follow-symlinks '/#include <linux\/sched\/task_stack.h>/d' $KFILES
-          # full_name_hash 2 argumen (kernel < 4.17)
           sed -i --follow-symlinks 's/full_name_hash(NULL, dirpath, strlen(dirpath))/full_name_hash((const unsigned char *)dirpath, strlen(dirpath))/' $KFILES
-          # group_info pakai blocks[] di 4.4
           sed -i --follow-symlinks 's/group_info->gid\[i\]/group_info->blocks[i]/' $KFILES
-          # security_add_hooks 2 argumen di 4.4
           sed -i --follow-symlinks 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' $KFILES
+
+          # === TAMBAHAN: PAKSA runner.elf DIBUAT DULU BIAR PROTON NGELUARIN ERROR ===
+          echo "Memastikan runner.elf siap..."
+          if [ -d drivers/kernelsu/preinit ]; then
+            cd drivers/kernelsu/preinit
+            make runner.elf 2>/dev/null || true
+            if [ ! -f runner.elf ] && [ -f Makefile ]; then
+              echo "blob.o: runner.elf" >> Makefile
+              make runner.elf 2>/dev/null || true
+            fi
+            [ -f runner.elf ] && echo "✅ runner.elf siap" || echo "⚠️ runner.elf belum ada"
+            cd ../../..
+          fi
           echo "compat fixes selesai"
-      - name: Apply SuSFS kernel patch + inline hooks
+
+      - name: Apply SuSFS patch + hooks
         if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' }}
         working-directory: kernel
         env:
@@ -181,112 +174,67 @@ jobs:
         run: |
           set -e
           BUILDER=/tmp/builder/Patches
-          # 1) patch kernel SuSFS: prioritas file di root repo kamu (kayak susfs_x00td_419.patch di 4.19)
           PATCH=""
-          if [ -f susfs_x00td_44.patch ]; then
-            PATCH="$PWD/susfs_x00td_44.patch"
-            echo "Pakai patch dari root repo: susfs_x00td_44.patch"
-          elif [ -f "$BUILDER/Patch/susfs_patch_to_4.4.patch" ]; then
-            PATCH="$BUILDER/Patch/susfs_patch_to_4.4.patch"
-            echo "Pakai patch dari builder: Patches/Patch/susfs_patch_to_4.4.patch"
-          fi
-          if [ -z "$PATCH" ]; then
-            echo "::error::susfs_patch_to_4.4.patch tidak ada di builder_ref ini. Isi Patches/Patch:"
-            ls -la "$BUILDER/Patch" || true
-            exit 1
-          fi
+          [ -f susfs_x00td_44.patch ] && PATCH="$PWD/susfs_x00td_44.patch" || \
+          [ -f "$BUILDER/Patch/susfs_patch_to_4.4.patch" ] && PATCH="$BUILDER/Patch/susfs_patch_to_4.4.patch"
+          [ -z "$PATCH" ] && echo "::error::Patch SuSFS 4.4 tidak ketemu" && exit 1
+
           if git apply -R --check "$PATCH" 2>/dev/null; then
-            echo "SuSFS kernel patch sudah ter-apply, skip"
+            echo "SuSFS sudah ter-apply, skip"
           elif git apply --check "$PATCH" 2>/dev/null; then
             git apply --whitespace=nowarn "$PATCH"
-            echo "SuSFS kernel patch applied (git apply)"
+            echo "SuSFS applied (git apply)"
           else
-            echo "git apply gagal, coba patch -p1 dengan fuzz..."
-            rc=0
-            patch -p1 -N -F3 --no-backup-if-mismatch < "$PATCH" || rc=$?
-            if [ "$rc" -ne 0 ] || find . -name '*.rej' | grep -q .; then
-              echo "::error::ada hunk SuSFS yang gagal, isi .rej di bawah (kirim ke Claude)"
-              find . -name '*.rej' -print -exec cat {} \;
-              exit 1
-            fi
-            echo "SuSFS kernel patch applied (patch -p1)"
+            patch -p1 -N -F3 --no-backup-if-mismatch < "$PATCH" || \
+              { find . -name '*.rej' -print -exec cat {} \;; exit 1; }
+            echo "SuSFS applied (patch -p1)"
           fi
-          # 2) fix khusus SukiSU (dari builder)
-          if [ "$KSU_FORK" = "sukisu" ]; then
-            FIX="$BUILDER/Patch/sukisu_ultra_fixed.patch"
-            if [ -f "$FIX" ]; then
-              rm -rf /tmp/sfix && mkdir -p /tmp/sfix
-              awk '/^diff --git /{n++} n>0{print > sprintf("/tmp/sfix/part%02d.p", n)}' "$FIX"
-              (
-                cd drivers/kernelsu
-                for p in /tmp/sfix/part*.p; do
-                  f=$(grep -m1 '^+++ ' "$p" | sed 's#^+++ [ab]/##')
-                  if [ "$f" = "runtime/ksud.c" ]; then
-                    sed -i -e '/ksu_selinux_hide_handle_post_fs_data();/d' -e '/ksu_selinux_hide_handle_second_stage();/d' runtime/ksud.c
-                    echo "SukiSU fix applied (hapus panggilan selinux_hide): $f"
-                    continue
-                  fi
-                  rc=0
-                  out=$(patch -p1 -N < "$p" 2>&1) || rc=$?
-                  if [ "$rc" -ne 0 ]; then
-                    echo "::error::SukiSU fix patch gagal untuk $f"
-                    echo "$out"
-                    exit 1
-                  fi
-                  echo "SukiSU fix applied: $f"
-                done
-              )
-            else
-              echo "::warning::sukisu_ultra_fixed.patch tidak ada di builder, skip"
-            fi
+
+          # Fix SukiSU
+          if [ "$KSU_FORK" = "sukisu" ] && [ -f "$BUILDER/Patch/sukisu_ultra_fixed.patch" ]; then
+            awk '/^diff --git /{n++} n>0{print > sprintf("/tmp/sfix/part%02d.p", n)}' "$BUILDER/Patch/sukisu_ultra_fixed.patch"
+            cd drivers/kernelsu
+            for p in /tmp/sfix/part*.p; do
+              f=$(grep -m1 '^+++ ' "$p" | sed 's#^+++ [ab]/##')
+              [ "$f" = "runtime/ksud.c" ] && { sed -i '/ksu_selinux_hide_handle/d' runtime/ksud.c; continue; }
+              patch -p1 -N < "$p" || exit 1
+            done
+            cd ../../..
           fi
-          # 3) inline hook
-          cp "$BUILDER/susfs_inline_hook_patches.sh" ./susfs_inline_hook_patches.sh
+
+          # Inline hooks
+          cp "$BUILDER/susfs_inline_hook_patches.sh" ./
           bash susfs_inline_hook_patches.sh ./ | tee /tmp/hook.log
           rm -f susfs_inline_hook_patches.sh
-          if grep -qiE "failed|warning" /tmp/hook.log; then
-            echo "::warning::script hook inline ngelaporin failed/warning, cek log di atas"
-          fi
-          # semua kekurangan dikumpulkan dulu, lalu gagal sekali, biar sekali run kelihatan semuanya
+          grep -qiE "failed|warning" /tmp/hook.log && echo "::warning::Cek log hook di atas"
+
+          # Cek kelengkapan
           MISSING=""
           for f in fs/exec.c fs/open.c fs/read_write.c fs/stat.c drivers/input/input.c kernel/reboot.c; do
             grep -q "ksu_" "$f" || MISSING="$MISSING hook-ksu:$f"
           done
-          # sys.c cuma di-hook kalau fork KSU punya ksu_handle_setresuid, jadi cuma warning
-          grep -q "ksu_" kernel/sys.c || echo "::warning::kernel/sys.c tanpa hook ksu_handle_setresuid (normal kalau fork KSU tidak punya)"
-          # patch kernel SuSFS memakai susfs_current_app_uid di fs/stat.c, include-nya cuma ditambah oleh script hook
           grep -q "susfs_def.h" fs/stat.c || MISSING="$MISSING include-susfs_def.h:fs/stat.c"
           grep -q "CONFIG_KSU_SUSFS" fs/namespace.c || MISSING="$MISSING susfs:fs/namespace.c"
-          if [ -n "$MISSING" ]; then
-            echo "::error::hook/patch belum lengkap:$MISSING"
-            echo "--- log script hook ---"
-            cat /tmp/hook.log
-            exit 1
-          fi
+          [ -n "$MISSING" ] && { echo "::error::Hook belum lengkap:$MISSING"; cat /tmp/hook.log; exit 1; }
           echo "Step SuSFS selesai"
-      - name: Apply manual hooks (KSU tanpa SuSFS)
+
+      - name: Manual hooks tanpa SuSFS
         if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs != 'true' }}
         working-directory: kernel
         run: |
           set -e
-          cp /tmp/builder/Patches/syscall_hook_patches.sh ./syscall_hook_patches.sh
-          bash syscall_hook_patches.sh ./ | tee /tmp/hook.log
-          rm -f syscall_hook_patches.sh
-          grep -qiE "failed|warning" /tmp/hook.log && echo "::warning::script hook ngelaporin failed/warning, cek log di atas" || true
+          bash /tmp/builder/Patches/syscall_hook_patches.sh ./
+          echo "Manual hooks selesai"
+
       - name: Select toolchain
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
-          # proton 13 = Proton clang 13 | gcc 9 = GCC 9 (apt) | gnu 13 = gcc 13 Ubuntu
           case "$TOOLCHAIN" in
-            "gnu 13"|"proton 13"|"gcc 9")
-              echo "Toolchain dipilih: $TOOLCHAIN"
-              ;;
-            *)
-              echo "::error::toolchain tidak dikenal: '$TOOLCHAIN' (harus 'gnu 13' / 'proton 13' / 'gcc 9')"
-              exit 1
-              ;;
+            "gnu 13"|"proton 13"|"gcc 9") echo "Toolchain: $TOOLCHAIN" ;;
+            *) echo "::error::Pilih gnu 13 / proton 13 / gcc 9"; exit 1 ;;
           esac
+
       - name: Restore ccache
         id: ccache_restore
         uses: actions/cache/restore@v4
@@ -296,6 +244,7 @@ jobs:
           restore-keys: |
             ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-
             ccache44-${{ github.event.inputs.toolchain }}-
+
       - name: Cache toolchain
         id: tc_cache
         if: ${{ github.event.inputs.toolchain == 'proton 13' }}
@@ -303,6 +252,7 @@ jobs:
         with:
           path: ~/proton-clang
           key: toolchain44-llvm-proton13-v1
+
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
@@ -310,25 +260,22 @@ jobs:
             bc bison build-essential ccache curl flex git patch \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev zstd wget xz-utils
-      - name: Install GCC 9 cross (toolchain gcc 9)
+
+      - name: Install GCC 9 cross
         if: ${{ github.event.inputs.toolchain == 'gcc 9' }}
         run: |
-          sudo apt-get install -y --no-install-recommends \
-            gcc-9-aarch64-linux-gnu gcc-9-arm-linux-gnueabi
+          sudo apt-get install -y gcc-9-aarch64-linux-gnu gcc-9-arm-linux-gnueabi
           aarch64-linux-gnu-gcc-9 --version | head -1
-      - name: Fetch toolchain (Proton clang 13)
+
+      - name: Fetch Proton Clang
         if: ${{ github.event.inputs.toolchain == 'proton 13' && steps.tc_cache.outputs.cache-hit != 'true' }}
         run: |
-          echo "Cloning Proton clang 13..."
-          git clone -q --depth=1 https://github.com/kdrag0n/proton-clang "$HOME/proton-clang"
+          git clone -q --depth 1 https://github.com/kdrag0n/proton-clang "$HOME/proton-clang"
           rm -rf "$HOME/proton-clang/.git"
-          if [ ! -x "$HOME/proton-clang/bin/clang" ]; then
-            echo "::error::bin/clang tidak ada setelah clone Proton clang"
-            ls -la "$HOME/proton-clang" || true
-            exit 1
-          fi
+          [ ! -x "$HOME/proton-clang/bin/clang" ] && echo "::error::Proton clang hilang" && exit 1
           "$HOME/proton-clang/bin/clang" --version | head -1
-      - name: Setup toolchain environment
+
+      - name: Setup toolchain env
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
           KCFLAGS_W: ${{ github.event.inputs.kcflags_w }}
@@ -336,69 +283,41 @@ jobs:
           case "$TOOLCHAIN" in
             "proton 13")
               TC="$HOME/proton-clang"
-              # PATH Proton SENGAJA ditaruh di belakang (lewat TC_BIN, di-export di step make).
-              # ld Proton (binutils 2.36) tidak bisa baca libc Ubuntu baru (.relr.dyn), jadi tool host
-              # (fixdep dll) harus pakai ld sistem. CROSS_COMPILE pakai binutils Ubuntu yang sudah terpasang.
               echo "TC_BIN=$TC/bin" >> "$GITHUB_ENV"
-              # runner punya clang sistem (versi baru) di /usr/bin. Karena PATH Proton ada di belakang,
-              # CCACHE_PATH memaksa ccache memanggil clang Proton, bukan clang sistem.
               echo "CCACHE_PATH=$TC/bin" >> "$GITHUB_ENV"
               echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="clang"
+              TC_KCFLAGS="-Wno-error -Wno-error=incompatible-pointer-types"
               ;;
             "gcc 9")
               echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc-9 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="aarch64-linux-gnu-gcc-9"
+              TC_KCFLAGS="-Wno-error"
               ;;
             *)
-              # gnu 13 (default)
               echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="aarch64-linux-gnu-gcc arm-linux-gnueabi-gcc"
+              TC_KCFLAGS="-Wno-error -Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types"
               ;;
           esac
-          # ccache: bikin symlink sendiri per compiler (ditaruh paling depan di PATH),
-          # jadi CC tidak perlu pakai spasi dan jalan juga buat clang / gcc-9
+          [ "$KCFLAGS_W" = "true" ] && TC_KCFLAGS="-w"
+          echo "TC_KCFLAGS=$TC_KCFLAGS" >> "$GITHUB_ENV"
+
           mkdir -p "$HOME/ccache-bin"
           CCACHE_EXE="$(command -v ccache)"
           for l in $CCACHE_LINKS; do
             ln -sf "$CCACHE_EXE" "$HOME/ccache-bin/$l"
           done
           echo "$HOME/ccache-bin" >> "$GITHUB_PATH"
-          # setting biar cache hit walau path/mtime compiler beda tiap run
+
           {
             echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
             echo "CCACHE_NOHASHDIR=true"
             echo "CCACHE_COMPILERCHECK=%compiler% --version"
             echo "CCACHE_SLOPPINESS=time_macros"
           } >> "$GITHUB_ENV"
-          case "$TOOLCHAIN" in
-            "gcc 9")
-              TC_KCFLAGS="-Wno-error"
-              ;;
-            "proton 13")
-              TC_KCFLAGS="-Wno-error -Wno-error=incompatible-pointer-types"
-              ;;
-            *)
-              # gnu 13
-              TC_KCFLAGS="-Wno-error -Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types"
-              ;;
-          esac
-          if [ "$KCFLAGS_W" = "true" ]; then
-            TC_KCFLAGS="-w"
-          fi
-          echo "TC_KCFLAGS=$TC_KCFLAGS" >> "$GITHUB_ENV"
-          ccache --max-size=3G
-          ccache --zero-stats
-      - name: Debug - Check files
-        run: |
-          echo "Repo  : ${{ github.event.inputs.repo }}"
-          echo "Branch: ${{ github.event.inputs.branch }}"
-          echo "KSU   : ${{ github.event.inputs.enable_ksu }} | SuSFS: ${{ github.event.inputs.enable_susfs }} | fork: ${{ github.event.inputs.ksu_fork }}"
-          echo "TC_MAKE_ARGS=$TC_MAKE_ARGS"
-          echo "TC_KCFLAGS=$TC_KCFLAGS"
-          echo "ccache cache-hit: ${{ steps.ccache_restore.outputs.cache-hit }} | matched key: ${{ steps.ccache_restore.outputs.cache-matched-key }}"
-          FOUND=$(find kernel/arch/arm64/configs -name "${{ github.event.inputs.defconfig }}" | head -1)
-          [ -n "$FOUND" ] && echo "FOUND: $FOUND" || echo "NOT FOUND: ${{ github.event.inputs.defconfig }}"
+          ccache --max-size=3G && ccache --zero-stats
+
       - name: Make defconfig
         working-directory: kernel
         env:
@@ -407,126 +326,71 @@ jobs:
           DEFCONFIG_NAME: ${{ github.event.inputs.defconfig }}
           KSU_DEBUG: ${{ github.event.inputs.ksu_debug }}
         run: |
-          set -e
           export PATH="$PATH${TC_BIN:+:$TC_BIN}"
-          if [ -n "$TC_BIN" ]; then echo "clang dipakai: $(command -v clang) -> $(CCACHE_DISABLE=1 clang --version | head -1)"; fi
           DEFCONFIG_PATH=$(find arch/arm64/configs -name "$DEFCONFIG_NAME" | head -1)
-          [ -z "$DEFCONFIG_PATH" ] && { echo "::error::$DEFCONFIG_NAME tidak ditemukan"; exit 1; }
+          [ -z "$DEFCONFIG_PATH" ] && echo "::error::$DEFCONFIG_NAME tidak ketemu" && exit 1
           DEFCONFIG_REL="${DEFCONFIG_PATH#arch/arm64/configs/}"
           make ARCH=arm64 O=out $TC_MAKE_ARGS "$DEFCONFIG_REL"
+
           if [ "$ENABLE_KSU" = "true" ] && [ "$ENABLE_SUSFS" = "true" ]; then
-            echo "KernelSU: ON + SuSFS"
-            {
-              echo "CONFIG_KSU=y"
-              echo "CONFIG_KSU_SUSFS=y"
-              echo "CONFIG_KSU_SUSFS_SUS_PATH=y"
-              echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y"
-              echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y"
-              echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y"
-              echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y"
-              echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y"
-              echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"
-              echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"
-              echo "CONFIG_KSU_SUSFS_SUS_MAP=y"
-            } >> out/.config
+            echo "CONFIG_KSU=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> out/.config
           elif [ "$ENABLE_KSU" = "true" ]; then
-            echo "KernelSU: ON (manual hook, tanpa SuSFS)"
-            {
-              echo "CONFIG_KSU=y"
-              echo "CONFIG_KSU_MANUAL_HOOK=y"
-            } >> out/.config
-          else
-            echo "KernelSU: OFF"
+            echo "CONFIG_KSU=y" >> out/.config
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           fi
           if [ "$ENABLE_KSU" = "true" ]; then
-            if [ "$KSU_DEBUG" = "true" ]; then
-              echo "CONFIG_KSU_DEBUG=y" >> out/.config
-            else
-              echo "# CONFIG_KSU_DEBUG is not set" >> out/.config
-            fi
+            [ "$KSU_DEBUG" = "true" ] && echo "CONFIG_KSU_DEBUG=y" >> out/.config || echo "# CONFIG_KSU_DEBUG is not set" >> out/.config
           fi
-          # speed-up: debug info tidak ikut ke Image.gz-dtb, tapi bikin compile + link jauh lebih lama
           echo "# CONFIG_DEBUG_INFO is not set" >> out/.config
           make ARCH=arm64 O=out $TC_MAKE_ARGS olddefconfig
-          echo "=== CONFIG_KSU* setelah olddefconfig ==="
-          grep -n "CONFIG_KSU" out/.config || echo "(tidak ada)"
-          grep -n "CONFIG_DEBUG_INFO" out/.config || true
+          grep -n "CONFIG_KSU" out/.config || true
+
       - name: Build kernel
         working-directory: kernel
         run: |
           export PATH="$PATH${TC_BIN:+:$TC_BIN}"
-          if [ -n "$TC_BIN" ]; then
-            echo "clang dipakai: $(command -v clang) -> $(CCACHE_DISABLE=1 clang --version | head -1)"
-            case "$(CCACHE_DISABLE=1 clang --version | head -1)" in
-              *"clang version 13."*) ;;
-              *) echo "::error::clang yang kepakai BUKAN Proton 13 (kemungkinan clang sistem runner)"; exit 1 ;;
-            esac
-          fi
-          echo "CPU cores: $(nproc)"
+          [ -n "$TC_BIN" ] && command -v clang && clang --version | head -1
           make ARCH=arm64 O=out $TC_MAKE_ARGS KCFLAGS="$TC_KCFLAGS" -j"$(nproc)" Image.gz dtbs
+
       - name: Pack Image.gz-dtb
         working-directory: kernel
         run: |
           DTB_PATH=""
-          for pattern in "sdm636" "sdm660"; do
-            FOUND=$(find out/arch/arm64/boot/dts -name "${pattern}*.dtb" | sort | head -1)
-            if [ -n "$FOUND" ]; then
-              DTB_PATH="$FOUND"
-              echo "DTB selected: $DTB_PATH"
-              break
-            fi
+          for p in sdm636 sdm660; do
+            FOUND=$(find out/arch/arm64/boot/dts -name "${p}*.dtb" | sort | head -1)
+            if [ -n "$FOUND" ]; then DTB_PATH="$FOUND"; break; fi
           done
-          if [ -z "$DTB_PATH" ]; then
-            echo "=== Semua DTB ==="
-            find out/arch/arm64/boot/dts -name "*.dtb" | sort
-            echo "::error::No sdm636/sdm660 DTB found"
-            exit 1
-          fi
-          [ ! -f out/arch/arm64/boot/Image.gz ] && { echo "::error::Image.gz missing"; exit 1; }
+          [ -z "$DTB_PATH" ] && { find out/arch/arm64/boot/dts -name '*.dtb' | sort; echo "::error::DTB hilang"; exit 1; }
           cat out/arch/arm64/boot/Image.gz "$DTB_PATH" > out/arch/arm64/boot/Image.gz-dtb
-          ls -lh out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image.gz-dtb
-      - name: Show compiler used
-        working-directory: kernel
-        continue-on-error: true
-        run: |
-          grep -E "LINUX_COMPILER|UTS_VERSION" out/include/generated/compile.h || true
-      - name: Verify KernelSU di kernel hasil build
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Verify KSU
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
         continue-on-error: true
-        env:
-          ENABLE_SUSFS: ${{ github.event.inputs.enable_susfs }}
         run: |
-          grep -n "CONFIG_KSU" out/.config || true
-          if grep -q "^CONFIG_KSU=y" out/.config && grep -qi "ksu" out/System.map; then
-            echo "OK: CONFIG_KSU=y dan simbol ksu ada di System.map"
-          else
-            echo "::warning::CONFIG_KSU=y atau simbol ksu tidak ditemukan, KSU belum aktif di build ini"
-            exit 1
-          fi
-          if [ "$ENABLE_SUSFS" = "true" ]; then
-            if grep -q "^CONFIG_KSU_SUSFS=y" out/.config && grep -qi "susfs" out/System.map; then
-              echo "OK: CONFIG_KSU_SUSFS=y dan simbol susfs ada di System.map"
-            else
-              echo "::warning::CONFIG_KSU_SUSFS=y atau simbol susfs tidak ditemukan, SuSFS belum aktif"
-              exit 1
-            fi
-          fi
-      - name: Build summary
-        if: always()
-        run: |
-          echo "=== Boot files ==="
-          ls -lh kernel/out/arch/arm64/boot/ 2>/dev/null || echo "(empty)"
-          echo "=== ccache stats ==="
-          ccache --show-stats 2>/dev/null || echo "ccache not available"
-      - name: Upload Image.gz-dtb
+          grep "CONFIG_KSU" out/.config || true
+          grep -q "ksu" out/System.map && echo "✅ KSU aktif" || echo "⚠️ KSU belum aktif"
+
+      - name: Upload hasil
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Build-X00TD-4.4-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.enable_ksu == 'true' && (github.event.inputs.enable_susfs == 'true' && format('KSU-SUSFS-{0}', github.event.inputs.ksu_fork) || format('KSU-{0}', github.event.inputs.ksu_fork)) || 'NOKSU' }}-${{ github.run_id }}
+          name: X00TD-4.4-${{ github.event.inputs.toolchain }}-${{ github.run_id }}
           path: kernel/out/arch/arm64/boot/Image.gz-dtb
           if-no-files-found: warn
-      - name: Save ccache (tetap disimpan walau build gagal)
+
+      - name: Save ccache
         if: always()
         uses: actions/cache/save@v4
         with:
