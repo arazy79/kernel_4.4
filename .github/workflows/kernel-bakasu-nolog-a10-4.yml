@@ -1,4 +1,5 @@
 name: Kernel Build X00TD 4.4 KSU SuSFS no log tes 4
+
 on:
   workflow_dispatch:
     inputs:
@@ -19,9 +20,9 @@ on:
         type: choice
         default: 'gnu'
         options:
-          - gnu gcc 13
-          - proton
-          - gcc 9
+          - gnu
+          - llvm
+          - gcc
       kcflags_w:
         description: 'Enable KCFLAGS=-w (tekan semua warning)'
         type: boolean
@@ -278,7 +279,7 @@ jobs:
         run: |
           # llvm = Proton clang 13 | gcc = GCC 9 (apt) | gnu = gcc 13 Ubuntu
           case "$TOOLCHAIN" in
-            gnu gcc 13|proton|gcc 9)
+            gnu|llvm|gcc)
               echo "Toolchain dipilih: $TOOLCHAIN"
               ;;
             *)
