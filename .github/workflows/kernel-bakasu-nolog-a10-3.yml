@@ -14,6 +14,14 @@ on:
         description: 'Defconfig'
         required: true
         default: 'X00TD_defconfig'
+      toolchain:
+        description: 'Pilih toolchain'
+        type: choice
+        default: 'proton 13'
+        options:
+          - gnu 13
+          - proton 13
+          - gcc 9
 
 jobs:
   build:
@@ -60,6 +68,7 @@ jobs:
           done
 
       - name: Ambil Proton
+        if: ${{ github.event.inputs.toolchain == 'proton 13' }}
         run: |
           git clone --depth 1 https://github.com/kdrag0n/proton-clang ~/proton-clang
 
@@ -70,17 +79,29 @@ jobs:
           DEFCONFIG=$(find arch/arm64/configs -name "${{ github.event.inputs.defconfig }}")
           [ -z "$DEFCONFIG" ] && echo "::error::Defconfig tidak ketemu" && exit 1
 
-          # CLANG dari Proton, TAPI ld & alat host TETAP dari sistem
-          PROTON_BIN="$HOME/proton-clang/bin"
-          # PATH: sistem duluan → ld/bison/flex dari sistem, clang dipanggil langsung
           export PATH="/usr/bin:/usr/local/bin:$PATH"
 
-          MAK="CC=$PROTON_BIN/clang \
-            LD=/usr/bin/ld \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            HOSTCC=gcc \
-            HOSTLD=ld"
+          if [ "${{ github.event.inputs.toolchain }}" = "proton 13" ]; then
+            PROTON_BIN="$HOME/proton-clang/bin"
+            MAK="CC=$PROTON_BIN/clang \
+              LD=/usr/bin/ld \
+              CLANG_TRIPLE=aarch64-linux-gnu- \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              HOSTCC=gcc \
+              HOSTLD=ld"
+          elif [ "${{ github.event.inputs.toolchain }}" = "gcc 9" ]; then
+            MAK="CC=aarch64-linux-gnu-gcc-9 \
+              LD=/usr/bin/ld \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              HOSTCC=gcc \
+              HOSTLD=ld"
+          else
+            MAK="CC=aarch64-linux-gnu-gcc \
+              LD=/usr/bin/ld \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              HOSTCC=gcc \
+              HOSTLD=ld"
+          fi
 
           make ARCH=arm64 O=out $MAK "${DEFCONFIG#*/}"
 
