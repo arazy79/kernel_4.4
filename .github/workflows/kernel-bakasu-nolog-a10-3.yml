@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS no log tes 4
+name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes 2
 on:
   workflow_dispatch:
     inputs:
@@ -342,7 +342,9 @@ jobs:
               # runner punya clang sistem (versi baru) di /usr/bin. Karena PATH Proton ada di belakang,
               # CCACHE_PATH memaksa ccache memanggil clang Proton, bukan clang sistem.
               echo "CCACHE_PATH=$TC/bin" >> "$GITHUB_ENV"
-              echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
+              # CLANG_FLAGS: kernel 4.4 tidak punya variabel ini, tapi BakaSU (preinit runner) memakainya buat
+              # compile binary userspace. Kosong = clang compile buat x86-64 -> "file in wrong format" waktu link.
+              echo "TC_MAKE_ARGS=CC=clang CLANG_FLAGS=--target=aarch64-linux-gnu CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="clang"
               ;;
             gcc)
@@ -527,7 +529,5 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: ~/.ccache
-          key: ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ~/.ccache
           key: ccache44-${{ github.event.inputs.toolchain }}-${{ github.event.inputs.branch }}-${{ github.run_id }}-${{ github.run_attempt }}
