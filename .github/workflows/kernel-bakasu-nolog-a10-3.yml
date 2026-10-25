@@ -14,14 +14,6 @@ on:
         description: 'Defconfig'
         required: true
         default: 'X00TD_defconfig'
-      toolchain:
-        description: 'Toolchain'
-        type: choice
-        default: 'proton 13'
-        options:
-          - gnu 13
-          - proton 13
-          - gcc 9
 
 jobs:
   build:
@@ -68,7 +60,6 @@ jobs:
           done
 
       - name: Ambil Proton
-        if: ${{ github.event.inputs.toolchain == 'proton 13' }}
         run: |
           git clone --depth 1 https://github.com/kdrag0n/proton-clang ~/proton-clang
 
@@ -79,13 +70,17 @@ jobs:
           DEFCONFIG=$(find arch/arm64/configs -name "${{ github.event.inputs.defconfig }}")
           [ -z "$DEFCONFIG" ] && echo "::error::Defconfig tidak ketemu" && exit 1
 
-          if [ "${{ github.event.inputs.toolchain }}" = "proton 13" ]; then
-            export PATH="$HOME/proton-clang/bin:$PATH"
-            # PENTING: LD=ld → pakai linker sistem, bukan Proton's ld
-            MAK="CC=clang LD=ld CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-"
-          else
-            MAK="CROSS_COMPILE=aarch64-linux-gnu-"
-          fi
+          # CLANG dari Proton, TAPI ld & alat host TETAP dari sistem
+          PROTON_BIN="$HOME/proton-clang/bin"
+          # PATH: sistem duluan → ld/bison/flex dari sistem, clang dipanggil langsung
+          export PATH="/usr/bin:/usr/local/bin:$PATH"
+
+          MAK="CC=$PROTON_BIN/clang \
+            LD=/usr/bin/ld \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            HOSTCC=gcc \
+            HOSTLD=ld"
 
           make ARCH=arm64 O=out $MAK "${DEFCONFIG#*/}"
 
