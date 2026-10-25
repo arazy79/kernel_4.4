@@ -1821,4 +1821,496 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 
 #if BOOT_UPDATE_FIRMWARE
 	nvt_fwu_wq = create_singlethread_workqueue("nvt_fwu_wq");
-	if (!
+	if (!nvt_fwu_wq) {
+		NVT_ERR("nvt_fwu_wq create workqueue failed\n");
+		ret = -ENOMEM;
+		goto err_create_nvt_fwu_wq_failed;
+	}
+	INIT_DELAYED_WORK(&ts->nvt_fwu_work, Boot_Update_Firmware);
+	// please make sure boot update start after display reset(RESX) sequence
+	queue_delayed_work(nvt_fwu_wq, &ts->nvt_fwu_work, msecs_to_jiffies(14000));
+#endif
+
+#if 0
+	/* Huaqin add by yuexinghan for ITO test start */
+	//--------add ito node
+	platform_device_register(&hwinfo_device);
+	nvt_test_node_init(&hwinfo_device);
+	/* Huaqin add by yuexinghan for ITO test end */
+#endif
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
+/********************add protect , 20170908***********************/
+#if NVT_TOUCH_ESD_PROTECT
+	INIT_DELAYED_WORK(&nvt_esd_check_work, nvt_esd_check_func);
+	nvt_esd_check_wq = create_workqueue("nvt_esd_check_wq");
+	queue_delayed_work(nvt_esd_check_wq, &nvt_esd_check_work,
+	msecs_to_jiffies(NVT_TOUCH_ESD_CHECK_PERIOD));
+#endif
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  end
+
+	//---set device node---
+#if NVT_TOUCH_PROC
+	ret = nvt_flash_proc_init();
+	if (ret != 0) {
+		NVT_ERR("nvt flash proc init failed. ret=%d\n", ret);
+		goto err_init_NVT_ts;
+	}
+#endif
+
+#if NVT_TOUCH_EXT_PROC
+	ret = nvt_extra_proc_init();
+	if (ret != 0) {
+		NVT_ERR("nvt extra proc init failed. ret=%d\n", ret);
+		goto err_init_NVT_ts;
+	}
+#endif
+
+#if NVT_TOUCH_MP
+	ret = nvt_mp_proc_init();
+	if (ret != 0) {
+		NVT_ERR("nvt mp proc init failed. ret=%d\n", ret);
+		goto err_init_NVT_ts;
+	}
+#endif
+
+/* Huaqin add by yuexinghan for gesture mode 20171030 start */
+#if WAKEUP_GESTURE
+	nvt_gesture_mode_proc = proc_create(NVT_GESTURE_MODE, 0666, NULL,
+				&gesture_mode_proc_ops);
+	if (!nvt_gesture_mode_proc) {
+		NVT_ERR("create proc tpd_gesture failed\n");
+	}
+#endif
+/* Huaqin add by yuexinghan for gesture mode 20171030 end */
+
+
+#if defined(CONFIG_FB)
+	ts->fb_notif.notifier_call = fb_notifier_callback;
+	ret = fb_register_client(&ts->fb_notif);
+	if(ret) {
+		NVT_ERR("register fb_notifier failed. ret=%d\n", ret);
+		goto err_register_fb_notif_failed;
+	}
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
+	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
+	ts->early_suspend.suspend = nvt_ts_early_suspend;
+	ts->early_suspend.resume = nvt_ts_late_resume;
+	ret = register_early_suspend(&ts->early_suspend);
+	if(ret) {
+		NVT_ERR("register early suspend failed. ret=%d\n", ret);
+		goto err_register_early_suspend_failed;
+	}
+#endif
+
+	bTouchIsAwake = 1;
+	NVT_LOG("end\n");
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
+	//enable_irq(client->irq);
+	nvt_irq_enable();
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform end
+
+	return 0;
+
+#if defined(CONFIG_FB)
+err_register_fb_notif_failed:
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
+err_register_early_suspend_failed:
+#endif
+#if (NVT_TOUCH_PROC || NVT_TOUCH_EXT_PROC || NVT_TOUCH_MP)
+err_init_NVT_ts:
+#endif
+	free_irq(client->irq, ts);
+#if BOOT_UPDATE_FIRMWARE
+err_create_nvt_fwu_wq_failed:
+#endif
+err_int_request_failed:
+err_input_register_device_failed:
+	input_free_device(ts->input_dev);
+err_input_dev_alloc_failed:
+err_create_nvt_wq_failed:
+	mutex_destroy(&ts->lock);
+err_chipvertrim_failed:
+err_check_functionality_failed:
+	gpio_free(ts->irq_gpio);
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  start
+err_gpio_config_failed:
+	nvt_lcm_power_source_ctrl(ts, 0);
+	nvt_lcm_bias_power_deinit(ts);
+err_power_resource_init_fail:
+	i2c_set_clientdata(client, NULL);
+	kfree(ts);
+	return ret;
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  end
+}
+
+/*******************************************************
+Description:
+	Novatek touchscreen driver release function.
+
+return:
+	Executive outcomes. 0---succeed.
+*******************************************************/
+static int32_t nvt_ts_remove(struct i2c_client *client)
+{
+	//struct nvt_ts_data *ts = i2c_get_clientdata(client);
+
+#if defined(CONFIG_FB)
+	if (fb_unregister_client(&ts->fb_notif))
+		NVT_ERR("Error occurred while unregistering fb_notifier.\n");
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
+	unregister_early_suspend(&ts->early_suspend);
+#endif
+
+	mutex_destroy(&ts->lock);
+
+	NVT_LOG("Removing driver...\n");
+
+	free_irq(client->irq, ts);
+	input_unregister_device(ts->input_dev);
+	i2c_set_clientdata(client, NULL);
+	kfree(ts);
+
+	return 0;
+}
+
+/* Huaqin modify for gesture mode by yuexinghan 20171120 start */
+long get_gesture_mode(void)
+{
+	return gesture_mode;
+}
+
+void set_gesture_mode(long enable)
+{
+	NVT_LOG("%s gesture mode\n", (enable == 0)?"disable":"enable");
+	gesture_mode = enable;
+#if WAKEUP_GESTURE
+	/* sync sysfs node state dengan gesture_mode */
+	allow_dclick  = (gesture_mode & MASK_GESTURE_DOUBLE_CLICK) ? 1 : 0;
+	allow_gesture = (gesture_mode & 0x0FE) ? 1 : 0;
+#endif
+	return;
+}
+/* Huaqin modify for gesture mode by yuexinghan 20171120 end */
+
+/*******************************************************
+Description:
+	Novatek touchscreen driver suspend function.
+
+return:
+	Executive outcomes. 0---succeed.
+*******************************************************/
+static int32_t nvt_ts_suspend(struct device *dev)
+{
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  start
+	struct nvt_ts_data *data = dev_get_drvdata(dev);
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  end
+	uint8_t buf[4] = {0};
+#if MT_PROTOCOL_B
+	uint32_t i = 0;
+#endif
+
+	if (!bTouchIsAwake) {
+		NVT_LOG("Touch is already suspend\n");
+		return 0;
+	}
+
+	mutex_lock(&ts->lock);
+
+	NVT_LOG("start\n");
+
+	bTouchIsAwake = 0;
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
+#if NVT_TOUCH_ESD_PROTECT
+	cancel_delayed_work_sync(&nvt_esd_check_work);
+	nvt_esd_check_enable(false);
+#endif
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  end
+
+#if WAKEUP_GESTURE
+	/* Huaqin add by yuexinghan for gesture mode 20171030 start */
+	if (((gesture_mode & 0x100) == 0) || ((gesture_mode & 0x0FF) == 0)) {
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
+		//disable_irq(ts->client->irq);
+		nvt_irq_disable();
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform end
+
+		//---write i2c command to enter "deep sleep mode"---
+		buf[0] = EVENT_MAP_HOST_CMD;
+		buf[1] = 0x11;
+		CTP_I2C_WRITE(ts->client, I2C_FW_Address, buf, 2);
+		NVT_LOG("Enter sleep mode\n");
+	}
+	else {
+		//---write i2c command to enter "wakeup gesture mode"---
+		buf[0] = EVENT_MAP_HOST_CMD;
+		buf[1] = 0x13;
+		CTP_I2C_WRITE(ts->client, I2C_FW_Address, buf, 2);
+
+		enable_irq_wake(ts->client->irq);
+
+		NVT_LOG("Enter gesture mode\n");
+	}
+	/* Huaqin add by yuexinghan for gesture mode 20171030 end */
+#else // WAKEUP_GESTURE
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
+	//disable_irq(ts->client->irq);
+	nvt_irq_disable();
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform end
+
+	//---write i2c command to enter "deep sleep mode"---
+	buf[0] = EVENT_MAP_HOST_CMD;
+	buf[1] = 0x11;
+	CTP_I2C_WRITE(ts->client, I2C_FW_Address, buf, 2);
+#endif // WAKEUP_GESTURE
+
+	/* release all touches */
+#if MT_PROTOCOL_B
+	for (i = 0; i < ts->max_touch_num; i++) {
+		input_mt_slot(ts->input_dev, i);
+// Huaqin add for  ACTION_HOVER_ENTER 1176453. by zhengwu.lu. at 2018/04/10 For Platform start
+		input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0);
+		input_report_abs(ts->input_dev, ABS_MT_PRESSURE, 0);
+// Huaqin add for  ACTION_HOVER_ENTER 1176453. by zhengwu.lu. at 2018/04/10 For Platform end
+		input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 0);
+	}
+#endif
+	input_report_key(ts->input_dev, BTN_TOUCH, 0);
+#if !MT_PROTOCOL_B
+	input_mt_sync(ts->input_dev);
+#endif
+	input_sync(ts->input_dev);
+
+	msleep(50);
+
+	mutex_unlock(&ts->lock);
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  start
+	if (((gesture_mode & 0x100) == 0) || ((gesture_mode & 0x0FF) == 0)) {
+	nvt_lcm_power_source_ctrl(data, 0);//disable vsp/vsn
+	NVT_LOG("sleep suspend end  disable vsp/vsn\n");
+	}
+	else{
+	NVT_LOG("gesture suspend end not disable vsp/vsn\n");
+	}
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  end
+
+	NVT_LOG("end\n");
+
+	return 0;
+}
+
+/*******************************************************
+Description:
+	Novatek touchscreen driver resume function.
+
+return:
+	Executive outcomes. 0---succeed.
+*******************************************************/
+static int32_t nvt_ts_resume(struct device *dev)
+{
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  start
+	struct nvt_ts_data *data = dev_get_drvdata(dev);
+	nvt_lcm_power_source_ctrl(data, 1);//enable vsp/vsn
+// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  end
+	if (bTouchIsAwake) {
+		NVT_LOG("Touch is already resume\n");
+		return 0;
+	}
+
+	mutex_lock(&ts->lock);
+
+	NVT_LOG("start\n");
+
+	// please make sure display reset(RESX) sequence and mipi dsi cmds sent before this
+	nvt_bootloader_reset();
+	nvt_check_fw_reset_state(RESET_STATE_REK);
+
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
+	nvt_irq_enable();
+// Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform end
+
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
+#if NVT_TOUCH_ESD_PROTECT
+		queue_delayed_work(nvt_esd_check_wq, &nvt_esd_check_work,
+		msecs_to_jiffies(NVT_TOUCH_ESD_CHECK_PERIOD));
+#endif
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  end
+
+	bTouchIsAwake = 1;
+
+	mutex_unlock(&ts->lock);
+
+	NVT_LOG("end\n");
+
+	return 0;
+}
+//Huaqin add for Reduce the bright screen time by qimaokang at 2018/4/20 start
+int fb_nvt_ts_resume(void *data)
+{
+	nvt_ts_resume(data);
+
+	return 0;
+}
+//Huaqin add for Reduce the bright screen time by qimaokang at 2018/4/20 end
+#if defined(CONFIG_FB)
+static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	int *blank;
+	struct nvt_ts_data *ts =
+		container_of(self, struct nvt_ts_data, fb_notif);
+
+	if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK) {
+		blank = evdata->data;
+		if (*blank == FB_BLANK_POWERDOWN) {
+			nvt_ts_suspend(&ts->client->dev);
+		}
+	} else if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		if (*blank == FB_BLANK_UNBLANK) {
+//Huaqin add for Reduce the bright screen time by qimaokang at 2018/4/20 start
+			kthread_run(fb_nvt_ts_resume,&ts->client->dev,"tp_resume");
+//Huaqin add for Reduce the bright screen time by qimaokang at 2018/4/20 end
+		}
+	}
+
+	return 0;
+}
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
+/*******************************************************
+Description:
+	Novatek touchscreen driver early suspend function.
+
+return:
+	n.a.
+*******************************************************/
+static void nvt_ts_early_suspend(struct early_suspend *h)
+{
+	nvt_ts_suspend(ts->client, PMSG_SUSPEND);
+}
+
+/*******************************************************
+Description:
+	Novatek touchscreen driver late resume function.
+
+return:
+	n.a.
+*******************************************************/
+static void nvt_ts_late_resume(struct early_suspend *h)
+{
+	nvt_ts_resume(ts->client);
+}
+#endif
+
+#if 0
+static const struct dev_pm_ops nvt_ts_dev_pm_ops = {
+	.suspend = nvt_ts_suspend,
+	.resume  = nvt_ts_resume,
+};
+#endif
+
+static const struct i2c_device_id nvt_ts_id[] = {
+	{ NVT_I2C_NAME, 0 },
+	{ }
+};
+
+#ifdef CONFIG_OF
+static struct of_device_id nvt_match_table[] = {
+	{ .compatible = "novatek,NVT-ts",},
+	{ },
+};
+#endif
+/*
+static struct i2c_board_info __initdata nvt_i2c_boardinfo[] = {
+	{
+		I2C_BOARD_INFO(NVT_I2C_NAME, I2C_FW_Address),
+	},
+};
+*/
+
+static struct i2c_driver nvt_i2c_driver = {
+	.probe		= nvt_ts_probe,
+	.remove		= nvt_ts_remove,
+//	.suspend	= nvt_ts_suspend,
+//	.resume		= nvt_ts_resume,
+	.id_table	= nvt_ts_id,
+	.driver = {
+		.name	= NVT_I2C_NAME,
+		.owner	= THIS_MODULE,
+#if 0
+#ifdef CONFIG_PM
+		.pm = &nvt_ts_dev_pm_ops,
+#endif
+#endif
+#ifdef CONFIG_OF
+		.of_match_table = nvt_match_table,
+#endif
+	},
+};
+
+/*******************************************************
+Description:
+	Driver Install function.
+
+return:
+	Executive Outcomes. 0---succeed. not 0---failed.
+********************************************************/
+static int32_t __init nvt_driver_init(void)
+{
+	int32_t ret = 0;
+
+	NVT_LOG("start\n");
+	//---add i2c driver---
+	ret = i2c_add_driver(&nvt_i2c_driver);
+	if (ret) {
+		pr_err("%s: failed to add i2c driver", __func__);
+		goto err_driver;
+	}
+
+	pr_info("%s: finished\n", __func__);
+
+err_driver:
+	return ret;
+}
+
+/*******************************************************
+Description:
+	Driver uninstall function.
+
+return:
+	n.a.
+********************************************************/
+static void __exit nvt_driver_exit(void)
+{
+#if WAKEUP_GESTURE
+	/* Huaqin add: cleanup sysfs nodes, proc entry, dan wakelock */
+	destroy_tp_nodes();
+	if (nvt_gesture_mode_proc) {
+		proc_remove(nvt_gesture_mode_proc);
+		nvt_gesture_mode_proc = NULL;
+	}
+	wake_lock_destroy(&gestrue_wakelock);
+#endif
+
+	i2c_del_driver(&nvt_i2c_driver);
+
+	if (nvt_wq)
+		destroy_workqueue(nvt_wq);
+
+#if BOOT_UPDATE_FIRMWARE
+	if (nvt_fwu_wq)
+		destroy_workqueue(nvt_fwu_wq);
+#endif
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
+#if NVT_TOUCH_ESD_PROTECT
+	if (nvt_esd_check_wq)
+		destroy_workqueue(nvt_esd_check_wq);
+#endif
+// Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  end
+}
+
+//late_initcall(nvt_driver_init);
+module_init(nvt_driver_init);
+module_exit(nvt_driver_exit);
+
+MODULE_DESCRIPTION("Novatek Touchscreen Driver");
+MODULE_LICENSE("GPL");
