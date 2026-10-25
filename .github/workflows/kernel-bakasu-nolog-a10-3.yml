@@ -1,4 +1,4 @@
-name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes 2
+name: Kernel Build X00TD 4.4 KSU SuSFS no log a10 tes 3
 on:
   workflow_dispatch:
     inputs:
@@ -46,6 +46,10 @@ on:
         description: 'Ref BakaSU (branch/tag/SHA), cuma dipakai kalau fork = bakasu. Default main (branch sync-susfs sudah dihapus upstream). Kalau sudah sukses, pin ke SHA'
         required: true
         default: 'main'
+      sukisu_ref:
+        description: 'Ref SukiSU-Ultra (branch/tag/SHA), cuma dipakai kalau fork = sukisu. Default = commit terakhir yang patch fix SukiSU dari builder masih bisa apply (21 Okt). builtin terbaru sudah bentrok'
+        required: true
+        default: '0165c0556929f1b509a9b632a46ef09b67a7940e'
       builder_ref:
         description: 'Ref repo JackA1ltman/NonGKI_Kernel_Build_2nd (branch/tag/SHA). Kalau sudah sukses, pin ke SHA biar bisa diulang persis'
         required: true
@@ -90,11 +94,12 @@ jobs:
           ENABLE_SUSFS: ${{ github.event.inputs.enable_susfs }}
           KSU_FORK: ${{ github.event.inputs.ksu_fork }}
           BAKASU_REF: ${{ github.event.inputs.bakasu_ref }}
+          SUKISU_REF: ${{ github.event.inputs.sukisu_ref }}
         run: |
           case "$KSU_FORK" in
             sukisu)
               KSU_URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/main/kernel/setup.sh"
-              KSU_BRANCH="builtin"
+              KSU_BRANCH="${SUKISU_REF}"
               KSU_REPO="https://github.com/SukiSU-Ultra/SukiSU-Ultra"
               ;;
             bakasu)
@@ -171,6 +176,20 @@ jobs:
           sed -i --follow-symlinks 's/group_info->gid\[i\]/group_info->blocks[i]/' $KFILES
           # security_add_hooks 2 argumen di 4.4
           sed -i --follow-symlinks 's/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu")/security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks))/' $KFILES
+          # <linux/static_call.h> baru ada di kernel 5.10+, tapi SukiSU meng-include-nya tanpa syarat.
+          # Stub ini bikin static_call jadi function pointer biasa (hasil kerjanya sama). Cuma dibuat kalau headernya tidak ada.
+          if [ ! -f include/linux/static_call.h ]; then
+            cat > include/linux/static_call.h <<'EOF'
+          #ifndef _KSU_STATIC_CALL_STUB_H
+          #define _KSU_STATIC_CALL_STUB_H
+          #define DECLARE_STATIC_CALL(name, func) extern typeof(func) *__ksu_sc_##name
+          #define DEFINE_STATIC_CALL(name, func) typeof(func) *__ksu_sc_##name = (func)
+          #define static_call(name) (*__ksu_sc_##name)
+          #define static_call_update(name, func) ((void)(__ksu_sc_##name = (func)))
+          #endif
+          EOF
+            echo "stub include/linux/static_call.h dibuat (kernel < 5.10)"
+          fi
           echo "compat fixes selesai"
       - name: Apply SuSFS kernel patch + inline hooks
         if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' }}
