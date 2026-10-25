@@ -422,6 +422,7 @@ jobs:
           # ==========================================
           echo "CONFIG_SUSPEND=y" >> out/.config
           echo "CONFIG_PM_SLEEP=y" >> out/.config
+          echo "CONFIG_PM_DEBUG=y" >> out/.config
           echo "CONFIG_DEBUG_KERNEL=y" >> out/.config
           echo "CONFIG_DEBUG_FS=y" >> out/.config
           echo "CONFIG_PM_SLEEP_DEBUG=y" >> out/.config
@@ -430,6 +431,10 @@ jobs:
           # ==========================================
 
           make ARCH=arm64 O=out $TC_MAKE_ARGS olddefconfig
+          
+          echo "=== VERIFIKASI SPOOFING CONFIG SETELAH OLDDEFCONFIG ==="
+          grep -E "CONFIG_SUSPEND=|CONFIG_PM_SLEEP=|CONFIG_DEBUG_FS=|CONFIG_PM_DEBUG=|CONFIG_PM_SLEEP_DEBUG=|CONFIG_POWERSUSPEND=" out/.config || true
+          echo "======================================================="
           echo "=== CONFIG_KSU* setelah olddefconfig ==="
           grep -n "CONFIG_KSU" out/.config || echo "(tidak ada)"
           grep -n "CONFIG_DEBUG_INFO" out/.config || true
