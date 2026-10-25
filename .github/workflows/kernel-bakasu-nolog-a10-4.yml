@@ -16,13 +16,13 @@ on:
         required: true
         default: 'X00TD_defconfig'
       toolchain:
-        description: 'gnu = gcc 13 bawaan Ubuntu (default, sudah terbukti boot) | llvm = Proton clang 13 | gcc = GCC 9 (Ubuntu cross, lewat apt)'
+        description: 'gnu 13 = gcc 13 bawaan Ubuntu (default, sudah terbukti boot) | proton 13 = Proton clang 13 | gcc 9 = GCC 9 (Ubuntu cross, lewat apt)'
         type: choice
-        default: 'gnu'
+        default: 'gnu 13'
         options:
-          - gnu
-          - llvm
-          - gcc
+          - gnu 13
+          - proton 13
+          - gcc 9
       kcflags_w:
         description: 'Enable KCFLAGS=-w (tekan semua warning)'
         type: boolean
@@ -277,13 +277,13 @@ jobs:
         env:
           TOOLCHAIN: ${{ github.event.inputs.toolchain }}
         run: |
-          # llvm = Proton clang 13 | gcc = GCC 9 (apt) | gnu = gcc 13 Ubuntu
+          # proton 13 = Proton clang 13 | gcc 9 = GCC 9 (apt) | gnu 13 = gcc 13 Ubuntu
           case "$TOOLCHAIN" in
-            gnu|llvm|gcc)
+            "gnu 13"|"proton 13"|"gcc 9")
               echo "Toolchain dipilih: $TOOLCHAIN"
               ;;
             *)
-              echo "::error::toolchain tidak dikenal: '$TOOLCHAIN' (harus gnu / llvm / gcc)"
+              echo "::error::toolchain tidak dikenal: '$TOOLCHAIN' (harus 'gnu 13' / 'proton 13' / 'gcc 9')"
               exit 1
               ;;
           esac
@@ -298,7 +298,7 @@ jobs:
             ccache44-${{ github.event.inputs.toolchain }}-
       - name: Cache toolchain
         id: tc_cache
-        if: ${{ github.event.inputs.toolchain == 'llvm' }}
+        if: ${{ github.event.inputs.toolchain == 'proton 13' }}
         uses: actions/cache@v4
         with:
           path: ~/proton-clang
@@ -310,14 +310,14 @@ jobs:
             bc bison build-essential ccache curl flex git patch \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libncurses-dev libssl-dev zstd wget xz-utils
-      - name: Install GCC 9 cross (toolchain gcc)
-        if: ${{ github.event.inputs.toolchain == 'gcc' }}
+      - name: Install GCC 9 cross (toolchain gcc 9)
+        if: ${{ github.event.inputs.toolchain == 'gcc 9' }}
         run: |
           sudo apt-get install -y --no-install-recommends \
             gcc-9-aarch64-linux-gnu gcc-9-arm-linux-gnueabi
           aarch64-linux-gnu-gcc-9 --version | head -1
       - name: Fetch toolchain (Proton clang 13)
-        if: ${{ github.event.inputs.toolchain == 'llvm' && steps.tc_cache.outputs.cache-hit != 'true' }}
+        if: ${{ github.event.inputs.toolchain == 'proton 13' && steps.tc_cache.outputs.cache-hit != 'true' }}
         run: |
           echo "Cloning Proton clang 13..."
           git clone -q --depth=1 https://github.com/kdrag0n/proton-clang "$HOME/proton-clang"
@@ -334,7 +334,7 @@ jobs:
           KCFLAGS_W: ${{ github.event.inputs.kcflags_w }}
         run: |
           case "$TOOLCHAIN" in
-            llvm)
+            "proton 13")
               TC="$HOME/proton-clang"
               # PATH Proton SENGAJA ditaruh di belakang (lewat TC_BIN, di-export di step make).
               # ld Proton (binutils 2.36) tidak bisa baca libc Ubuntu baru (.relr.dyn), jadi tool host
@@ -346,11 +346,12 @@ jobs:
               echo "TC_MAKE_ARGS=CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="clang"
               ;;
-            gcc)
+            "gcc 9")
               echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc-9 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="aarch64-linux-gnu-gcc-9"
               ;;
             *)
+              # gnu 13 (default)
               echo "TC_MAKE_ARGS=CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-" >> "$GITHUB_ENV"
               CCACHE_LINKS="aarch64-linux-gnu-gcc arm-linux-gnueabi-gcc"
               ;;
@@ -371,13 +372,14 @@ jobs:
             echo "CCACHE_SLOPPINESS=time_macros"
           } >> "$GITHUB_ENV"
           case "$TOOLCHAIN" in
-            gcc)
+            "gcc 9")
               TC_KCFLAGS="-Wno-error"
               ;;
-            llvm)
+            "proton 13")
               TC_KCFLAGS="-Wno-error -Wno-error=incompatible-pointer-types"
               ;;
             *)
+              # gnu 13
               TC_KCFLAGS="-Wno-error -Wno-error=enum-int-mismatch -Wno-error=incompatible-pointer-types"
               ;;
           esac
