@@ -1960,7 +1960,27 @@ static int smb2_determine_initial_status(struct smb2 *chip)
  * INTERRUPT REGISTRATION *
  **************************/
 
+#ifdef CONFIG_MACH_ASUS_SDM660
+/*
+ * Wrapper untuk IRQ usbin-plugin: panggil handler asli dulu
+ * (supaya state usb_online ter-update), baru cek apakah bypass
+ * perlu dimatikan karena kabel dicabut.
+ */
+static irqreturn_t bypass_usb_plugin_irq(int irq, void *data)
+{
+        struct smb_irq_data *irq_data = data;
+        struct smb2 *chip = irq_data->parent_data;
+        irqreturn_t rc;
+
+        rc = smblib_handle_usb_plugin(irq, data);
+        if (chip)
+                bypass_check_plugout(&chip->chg);
+        return rc;
+}
+#endif
+
 static struct smb_irq_info smb2_irqs[] = {
+
 /* CHARGER IRQs */
         [CHG_ERROR_IRQ] = {
                 .name                = "chg-error",
@@ -2045,7 +2065,11 @@ static struct smb_irq_info smb2_irqs[] = {
         },
         [USBIN_PLUGIN_IRQ] = {
                 .name                = "usbin-plugin",
+#ifdef CONFIG_MACH_ASUS_SDM660
+                .handler        = bypass_usb_plugin_irq,
+#else
                 .handler        = smblib_handle_usb_plugin,
+#endif
                 .wake                = true,
         },
         [USBIN_SRC_CHANGE_IRQ] = {
@@ -2354,7 +2378,6 @@ static ssize_t charger_limit_enable_write_proc(struct file *file,
         smblib_get_prop_usb_online(smbchg_dev, &pval);
         online = pval.intval;
 		
-        bypass_check_plugout(smbchg_dev);
 
         if (size >= 32)
                 return -EFAULT;
