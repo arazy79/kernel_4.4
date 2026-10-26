@@ -35,6 +35,16 @@
 #include <linux/proc_fs.h>
 #include <asm-generic/errno-base.h>
 #include <linux/qpnp/qpnp-adc.h>
+
+  // --- BYPASS CHARGING START ---
+  #define BYPASS_CHARGE_EN_PROC_FILE    "driver/bypass_charge_enable"
+  static struct proc_dir_entry *bypass_enable_entry;
+  static bool bypass_charge_active = false;
+  static int original_fcc_ua = -EINVAL;
+  void bypass_check_plugout(struct smb_charger *chg);
+  static const struct file_operations bypass_charge_ops;
+  // --- BYPASS CHARGING END ---
+
 #endif
 
 #define SMB2_DEFAULT_WPWR_UW        8000000
@@ -2343,6 +2353,8 @@ static ssize_t charger_limit_enable_write_proc(struct file *file,
 
         smblib_get_prop_usb_online(smbchg_dev, &pval);
         online = pval.intval;
+		
+        bypass_check_plugout(smbchg_dev);
 
         if (size >= 32)
                 return -EFAULT;
@@ -2468,13 +2480,11 @@ static const struct file_operations charger_limit_proc_ops = {
     .write = charger_limit_write_proc,
 };
 
-static int init_proc_charger_limit(void)
-{
+ static int init_proc_charger_limit(void)
+ {
         int ret;
-
         limit_enable_entry = proc_create(CHARGER_LIMIT_EN_PROC_FILE, 0666,
                                         NULL, &charger_limit_enable_proc_ops);
-
         if (limit_enable_entry == NULL)        {
                 pr_debug("create_proc entry %s failed\n",
                                 CHARGER_LIMIT_EN_PROC_FILE);
@@ -2484,10 +2494,8 @@ static int init_proc_charger_limit(void)
                                 CHARGER_LIMIT_EN_PROC_FILE);
                 ret = 0;
         }
-
         limit_entry = proc_create(CHARGER_LIMIT_PROC_FILE, 0666, NULL,
                                         &charger_limit_proc_ops);
-
         if (limit_entry == NULL) {
                 pr_debug("create_proc entry %s failed\n",
                                 CHARGER_LIMIT_PROC_FILE);
@@ -2497,14 +2505,23 @@ static int init_proc_charger_limit(void)
                                 CHARGER_LIMIT_PROC_FILE);
                 ret = 0;
         }
+        // --- BYPASS CHARGING — Daftarkan entry baru ---
+        bypass_enable_entry = proc_create(BYPASS_CHARGE_EN_PROC_FILE, 0666,
+                                        NULL, &bypass_charge_ops);
+        if (!bypass_enable_entry) {
+                pr_err("Bypass: gagal buat proc entry\n");
+                ret = -ENOMEM;
+        } else {
+                pr_info("Bypass: siap — /proc/driver/bypass_charge_enable\n");
+        }
 
         return ret;
 }
-
 static void remove_proc_charger_limit(void)
 {
         proc_remove(limit_enable_entry);
         proc_remove(limit_entry);
+		proc_remove(bypass_enable_entry);
 }
 
 int32_t get_ID_vadc_voltage(void)
@@ -2532,6 +2549,88 @@ int32_t get_ID_vadc_voltage(void)
         return adc;
 }
 #endif
+
+// --- BYPASS CHARGING FUNCTIONS ---
+static ssize_t bypass_charge_read(struct file *file, char __user *page,
+                                   size_t size, loff_t *ppos)
+{
+    char buf[16];
+    int len;
+    if (*ppos) return 0;
+    len = sprintf(buf, "%d\n", bypass_charge_active ? 1 : 0);
+    if (len > size) len = size;
+    if (copy_to_user(page, buf, len)) return -EFAULT;
+    *ppos = len;
+    return len;
+}
+
+static ssize_t bypass_charge_write(struct file *file, const char __user *buff,
+                                    size_t size, loff_t *ppos)
+{
+    char val_buf[16];
+    bool is_plugged;
+   union power_supply_propval pval;
+
+    if (size >= sizeof(val_buf)) return -EINVAL;
+    if (copy_from_user(val_buf, buff, size)) return -EFAULT;
+    val_buf[size] = '\0';
+
+    if (!smbchg_dev) return -ENODEV;
+
+    if (smblib_get_prop_usb_online(smbchg_dev, &pval) < 0)
+        is_plugged = false;
+    else
+        is_plugged = !!pval.intval;
+
+    if (val_buf[0] == '1') {
+        if (!is_plugged) {
+            pr_info("Bypass: charger tidak terhubung, batal\n");
+            return size;
+        }
+        if (original_fcc_ua < 0)
+            original_fcc_ua = get_client_vote(smbchg_dev->fcc_votable, BATT_PROFILE_VOTER);
+        vote(smbchg_dev->fcc_votable, USER_VOTER, true, 0);
+        bypass_charge_active = true;
+        pr_info("Bypass: AKTIF — arus isi = 0\n");
+    } else if (val_buf[0] == '0') {
+        if (original_fcc_ua >= 0) {
+            vote(smbchg_dev->fcc_votable, USER_VOTER, false, original_fcc_ua);
+            original_fcc_ua = -EINVAL;
+        }
+        bypass_charge_active = false;
+        pr_info("Bypass: MATI — arus dikembalikan\n");
+    }
+    return size;
+}
+
+static const struct file_operations bypass_charge_ops = {
+    .read = bypass_charge_read,
+    .write = bypass_charge_write,
+};
+
+void bypass_check_plugout(struct smb_charger *chg)
+{
+    union power_supply_propval pval;
+    bool is_plugged;
+
+    if (!bypass_charge_active)
+        return;
+
+    if (smblib_get_prop_usb_online(chg, &pval) < 0)
+        is_plugged = false;
+    else
+        is_plugged = !!pval.intval;
+
+    if (!is_plugged) {
+        pr_info("Bypass: kabel dicabut, otomatis matiin\n");
+        if (original_fcc_ua >= 0) {
+            vote(chg->fcc_votable, USER_VOTER, false, original_fcc_ua);
+            original_fcc_ua = -EINVAL;
+        }
+        bypass_charge_active = false;
+    }
+}
+// --- END BYPASS ---
 
 static int smb2_probe(struct platform_device *pdev)
 {
