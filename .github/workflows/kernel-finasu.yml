@@ -54,7 +54,7 @@ on:
       finasu_ref:
         description: 'Ref FinaSU (branch/tag/SHA), cuma dipakai kalau fork = finasu. Default dev. Kalau sudah sukses, pin ke SHA'
         required: true
-        default: 'dev'
+        default: 'master'
       builder_ref:
         description: 'Ref repo JackA1ltman/NonGKI_Kernel_Build_2nd (branch/tag/SHA). Kalau sudah sukses, pin ke SHA biar bisa diulang persis'
         required: true
@@ -204,6 +204,39 @@ jobs:
             echo "stub include/linux/static_call.h dibuat (kernel < 5.10)"
           fi
           echo "compat fixes selesai"
+      - name: FinaSU syscall_fn_t & UAPI fix
+        if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.ksu_fork == 'finasu' }}
+        working-directory: kernel
+        run: |
+          HOOK_H="drivers/kernelsu/hook/syscall_hook.h"
+
+          if [ ! -f "$HOOK_H" ]; then
+            echo "::error::File syscall_hook.h tidak ketemu"
+            find drivers/kernelsu -name "syscall_hook.h"
+            exit 1
+          fi
+
+          if ! grep -q "KSU_SYSCALL_FN_T_FIX" "$HOOK_H"; then
+            sed -i '1a\
+          /* KSU_SYSCALL_FN_T_FIX: fix syscall_fn_t untuk kernel 4.4 */\
+          #include <linux/linkage.h>\
+          #include <asm/ptrace.h>\
+          #ifndef syscall_fn_t\
+          typedef asmlinkage long (*syscall_fn_t)(const struct pt_regs *);\
+          #endif\
+          ' "$HOOK_H"
+            echo "syscall_fn_t sudah ditempel di syscall_hook.h ✅"
+          else
+            echo "syscall_fn_t fix sudah ada, skip ✅"
+          fi
+
+          if [ ! -d ./usr/include/asm ]; then
+            make ARCH=arm64 -j$(nproc) headers_install INSTALL_HDR_PATH=./usr
+            echo "UAPI headers dibuat ✅"
+          fi
+
+          echo "FinaSU fix untuk kernel 4.4 selesai ✅"
+          
       - name: Apply SuSFS kernel patch + inline hooks
         if: ${{ github.event.inputs.enable_ksu == 'true' && github.event.inputs.enable_susfs == 'true' }}
         working-directory: kernel
