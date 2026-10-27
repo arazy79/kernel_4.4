@@ -143,6 +143,7 @@ jobs:
           fi
           [ ! -f drivers/kernelsu/Kconfig ] && { echo "::error::Setup gagal — drivers/kernelsu/Kconfig hilang"; exit 1; }
           echo "::endgroup::"
+
       - name: KernelSU compat fixes — kernel 4.4
         if: ${{ github.event.inputs.enable_ksu == 'true' }}
         working-directory: kernel
@@ -316,6 +317,7 @@ typedef asmlinkage long (*syscall_fn_t)(const struct pt_regs *);\
           [ "$TOOLCHAIN" = "llvm" ] && TC_KCFLAGS="$TC_KCFLAGS -Wno-error=incompatible-pointer-types"
           [ "$KCFLAGS_W" = "true" ] && TC_KCFLAGS="-w"
           echo "TC_KCFLAGS=$TC_KCFLAGS" >> "$GITHUB_ENV"
+
       - name: Make defconfig
         working-directory: kernel
         run: |
