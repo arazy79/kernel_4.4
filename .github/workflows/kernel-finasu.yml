@@ -437,6 +437,7 @@ jobs:
           ENABLE_SUSFS: ${{ github.event.inputs.enable_susfs }}
           DEFCONFIG_NAME: ${{ github.event.inputs.defconfig }}
           KSU_DEBUG: ${{ github.event.inputs.ksu_debug }}
+          KSU_FORK: ${{ github.event.inputs.ksu_fork }}
         run: |
           set -e
           export PATH="$PATH${TC_BIN:+:$TC_BIN}"
@@ -468,6 +469,24 @@ jobs:
             } >> out/.config
           else
             echo "KernelSU: OFF"
+          fi
+          # FinaSU: paksa mode manual/inline hook. Mode syscall table hook butuh syscall_fn_t
+          # + sys_call_table yang bisa di-hook (kernel 4.19+), tidak ada di 4.4.
+          if [ "$ENABLE_KSU" = "true" ] && [ "$KSU_FORK" = "finasu" ]; then
+            echo "--- FinaSU hook symbols (dari Kconfig) ---"
+            grep -rnE "^[[:space:]]*(config|choice|menuconfig)[[:space:]]+.*(HOOK|SYSCALL|TRACEPOINT|KPROBE)" drivers/kernelsu --include=Kconfig* || echo "(tidak ada simbol hook di Kconfig)"
+            if grep -rqE "^[[:space:]]*config[[:space:]]+KSU_MANUAL_HOOK" drivers/kernelsu --include=Kconfig*; then
+              echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+              echo "FinaSU: CONFIG_KSU_MANUAL_HOOK=y"
+            else
+              echo "::warning::FinaSU Kconfig tidak punya KSU_MANUAL_HOOK, cek daftar simbol hook di atas"
+            fi
+            for sym in KSU_SYSCALL_HOOK KSU_SYSCALL_TABLE_HOOK KSU_TRACEPOINT_HOOK KSU_KPROBES_HOOK KSU_HOOK_SYSCALL_TABLE; do
+              if grep -rqE "^[[:space:]]*config[[:space:]]+$sym\b" drivers/kernelsu --include=Kconfig*; then
+                echo "# CONFIG_$sym is not set" >> out/.config
+                echo "FinaSU: CONFIG_$sym dimatikan"
+              fi
+            done
           fi
           if [ "$ENABLE_KSU" = "true" ]; then
             if [ "$KSU_DEBUG" = "true" ]; then
