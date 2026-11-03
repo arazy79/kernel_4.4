@@ -1,4 +1,4 @@
-name: - miui a10
+name: -- miui a10
 on:
   workflow_dispatch:
     inputs:
