@@ -100,4 +100,12 @@ config QPNP_QNOVO
 	  module. It also allows userspace code to read diagnostics of voltage
 	  and current measured during certain phases of the pulses.
 
+config CHARGING_AUTOCUT
+	bool "Auto-cut charging support"
+	depends on QPNP_SMB2
+	default y
+	help
+	  Enables automatic charging stop/resume based on configurable
+	  SOC thresholds via /sys/module/autocut/parameters/
+
 endmenu
