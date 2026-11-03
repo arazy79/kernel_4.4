@@ -153,8 +153,8 @@
 #include "sdm660-external-codec.dtsi"
 
 / {
-	model = "Qualcomm Technologies, Inc. SDA 636 PM660 + PM660A QRD HDK636";
-	compatible = "qcom,sda636-qrd", "qcom,sda636", "qcom,qrd";
+	model = "Qualcomm Technologies, Inc. SDA 660 PM660 + PM660A QRD HDK660";
+	compatible = "qcom,sda660-qrd", "qcom,sda6606", "qcom,qrd";
 	qcom,board-id = <0x0016000b 0>;
 	qcom,pmic-id = <0x0001001b 0x0001011a 0x0 0x0>,
 			<0x0001001b 0x0002001a 0x0 0x0>,
