@@ -14,8 +14,8 @@ echo ''
 
 TOP=$(realpath ../)
 
-export KBUILD_BUILD_USER=prabhat774
-export KBUILD_BUILD_HOST=linux
+export KBUILD_BUILD_USER=android
+export KBUILD_BUILD_HOST=Github-CI
 
 PATH="$TOP/tools/build-tools/linux-x86/bin:$PATH"
 PATH="$TOP/tools/build-tools/path/linux-x86:$PATH"
