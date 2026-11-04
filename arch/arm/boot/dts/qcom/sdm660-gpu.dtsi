@@ -23,8 +23,8 @@
 	};
 
 	gpubw: qcom,gpubw {
-		compatible = "performance";
-		governor = "bw_vbif";
+		compatible = "qcom,devbw";
+		governor = "performance";
 		qcom,src-dst-ports = <26 512>;
 		/*
 		 * active-only flag is used while registering the bus
