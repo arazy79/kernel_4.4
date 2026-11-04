@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.4.180 Kernel Configuration
+# Linux/arm64 4.4.267 stock Kernel Configuration
 #
 CONFIG_ARM64=y
 CONFIG_64BIT=y
@@ -5301,3 +5301,5 @@ CONFIG_OID_REGISTRY=y
 CONFIG_ARCH_HAS_SG_CHAIN=y
 CONFIG_QMI_ENCDEC=y
 # CONFIG_QMI_ENCDEC_DEBUG is not set
+CONFIG_CHARGING_AUTOCUT=y
+CONFIG_EXFAT_FS=y
