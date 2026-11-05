@@ -3077,6 +3077,16 @@ static struct file_system_type ntfs_fs_type = {
 };
 MODULE_ALIAS_FS("ntfs");
 
+/* Alias "tntfs" biar vold (Ntfs handler) mengenali driver ini. */
+static struct file_system_type tntfs_fs_type = {
+	.owner		= THIS_MODULE,
+	.name		= "tntfs",
+	.mount		= ntfs_mount,
+	.kill_sb	= kill_block_super,
+	.fs_flags	= FS_REQUIRES_DEV,
+};
+MODULE_ALIAS_FS("tntfs");
+
 /* Stable names for the slab caches. */
 static const char ntfs_index_ctx_cache_name[] = "ntfs_index_ctx_cache";
 static const char ntfs_attr_ctx_cache_name[] = "ntfs_attr_ctx_cache";
@@ -3155,8 +3165,12 @@ static int __init init_ntfs_fs(void)
 
 	err = register_filesystem(&ntfs_fs_type);
 	if (!err) {
-		ntfs_debug("NTFS driver registered successfully.");
-		return 0; /* Success! */
+		err = register_filesystem(&tntfs_fs_type);
+		if (!err) {
+			ntfs_debug("NTFS driver registered successfully.");
+			return 0; /* Success! */
+		}
+		unregister_filesystem(&ntfs_fs_type);
 	}
 	pr_crit("Failed to register NTFS filesystem driver!\n");
 
@@ -3185,6 +3199,7 @@ static void __exit exit_ntfs_fs(void)
 	ntfs_debug("Unregistering NTFS driver.");
 
 	unregister_filesystem(&ntfs_fs_type);
+	unregister_filesystem(&tntfs_fs_type);
 
 	/*
 	 * Make sure all delayed rcu free inodes are flushed before we
