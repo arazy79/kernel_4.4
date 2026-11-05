@@ -1,0 +1,153 @@
+name: Copy Folder Antar Repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Source repo (owner/repo)'
+        required: true
+        default: 'arazy79/kernel_4.19'
+        type: string
+      source_branch:
+        description: 'Source branch'
+        required: true
+        default: 'a16x_top'
+        type: string
+      source_path:
+        description: 'Folder sumber (kosong = seluruh repo)'
+        required: false
+        default: 'drivers/power/supply/qcom'
+        type: string
+      target_repo:
+        description: 'Target repo (owner/repo)'
+        required: true
+        default: 'arazy79/kernel_4.19'
+        type: string
+      target_branch:
+        description: 'Target branch (dibuat otomatis kalau belum ada)'
+        required: true
+        default: 'a16-sonic'
+        type: string
+      target_path:
+        description: 'Folder tujuan (kosong = root repo)'
+        required: false
+        default: 'drivers/power/supply/qcom'
+        type: string
+      file_list:
+        description: 'OPSIONAL: daftar file/folder (spasi/koma), path sama di source & target. Kalau diisi, source_path/target_path diabaikan'
+        required: false
+        default: ''
+        type: string
+      clean_target:
+        description: 'Hapus file di target yang tidak ada di source (mirror, hanya untuk folder)'
+        required: false
+        default: false
+        type: boolean
+      commit_message:
+        description: 'Pesan commit'
+        required: false
+        default: 'Copy folder from source repo'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy folder
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          SRC_REPO: ${{ inputs.source_repo }}
+          SRC_BRANCH: ${{ inputs.source_branch }}
+          SRC_PATH: ${{ inputs.source_path }}
+          DST_REPO: ${{ inputs.target_repo }}
+          DST_BRANCH: ${{ inputs.target_branch }}
+          DST_PATH: ${{ inputs.target_path }}
+          FILE_LIST: ${{ inputs.file_list }}
+          CLEAN: ${{ inputs.clean_target }}
+          MSG: ${{ inputs.commit_message }}
+        run: |
+          set -euo pipefail
+
+          SRC_URL="https://x-access-token:${GH_TOKEN}@github.com/${SRC_REPO}.git"
+          DST_URL="https://x-access-token:${GH_TOKEN}@github.com/${DST_REPO}.git"
+
+          echo "== Clone source: ${SRC_REPO}@${SRC_BRANCH}"
+          git clone --depth 1 --branch "$SRC_BRANCH" "$SRC_URL" /tmp/src
+
+          echo "== Clone target: ${DST_REPO}@${DST_BRANCH}"
+          if git ls-remote --exit-code --heads "$DST_URL" "$DST_BRANCH" >/dev/null 2>&1; then
+            git clone --depth 1 --branch "$DST_BRANCH" "$DST_URL" /tmp/dst
+          else
+            echo "Branch target belum ada, bikin baru dari default branch"
+            git clone --depth 1 "$DST_URL" /tmp/dst
+            git -C /tmp/dst checkout -b "$DST_BRANCH"
+          fi
+
+          FILE_LIST="${FILE_LIST//,/ }"
+
+          if [ -n "${FILE_LIST// /}" ]; then
+            # ===== Mode daftar file/folder (path sama di source dan target) =====
+            echo "== Mode daftar: ${FILE_LIST}"
+            for F in $FILE_LIST; do
+              F="${F#./}"; F="${F#/}"; F="${F%/}"
+              if [ ! -e "/tmp/src/$F" ]; then
+                echo "::error::'${F}' tidak ditemukan di ${SRC_REPO}@${SRC_BRANCH}"
+                exit 1
+              fi
+              if [ -d "/tmp/src/$F" ]; then
+                mkdir -p "/tmp/dst/$F"
+                if [ "$CLEAN" = "true" ]; then
+                  rsync -a --delete --exclude='.git' "/tmp/src/$F"/ "/tmp/dst/$F"/
+                else
+                  rsync -a --exclude='.git' "/tmp/src/$F"/ "/tmp/dst/$F"/
+                fi
+                echo "folder: $F"
+              else
+                mkdir -p "$(dirname "/tmp/dst/$F")"
+                cp -f "/tmp/src/$F" "/tmp/dst/$F"
+                echo "file:   $F"
+              fi
+            done
+          else
+            # ===== Mode folder tunggal (source_path -> target_path) =====
+            # Rapikan path (buang ./ dan slash di awal/akhir)
+            SRC_PATH="${SRC_PATH#./}"; SRC_PATH="${SRC_PATH#/}"; SRC_PATH="${SRC_PATH%/}"
+            DST_PATH="${DST_PATH#./}"; DST_PATH="${DST_PATH#/}"; DST_PATH="${DST_PATH%/}"
+            [ "$SRC_PATH" = "." ] && SRC_PATH=""
+            [ "$DST_PATH" = "." ] && DST_PATH=""
+
+            FROM="/tmp/src"
+            [ -n "$SRC_PATH" ] && FROM="/tmp/src/$SRC_PATH"
+            if [ ! -d "$FROM" ]; then
+              echo "::error::Folder sumber '${SRC_PATH}' tidak ditemukan di ${SRC_REPO}@${SRC_BRANCH}"
+              exit 1
+            fi
+
+            TO="/tmp/dst"
+            [ -n "$DST_PATH" ] && TO="/tmp/dst/$DST_PATH"
+            mkdir -p "$TO"
+
+            echo "== Copy ${SRC_PATH:-<root>} -> ${DST_PATH:-<root>}"
+            if [ "$CLEAN" = "true" ]; then
+              rsync -a --delete --exclude='.git' "$FROM"/ "$TO"/
+            else
+              rsync -a --exclude='.git' "$FROM"/ "$TO"/
+            fi
+          fi
+
+          cd /tmp/dst
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan, skip commit."
+            exit 0
+          fi
+
+          git commit -m "$MSG"
+          git push origin "$DST_BRANCH"
+          echo "== Selesai"
