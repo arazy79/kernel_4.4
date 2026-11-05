@@ -18,21 +18,23 @@
 #ifndef 	_LINUX_NVT_TOUCH_H
 #define		_LINUX_NVT_TOUCH_H
 
-#if 0
-/* Huaqin add by yuexinghan for ITO test start */
+/* Huaqin add by yuexinghan for ITO test start
 #include <linux/platform_device.h>
 #include <linux/device.h>
-/* Huaqin add by yuexinghan for ITO test end */
-#endif
+Huaqin add by yuexinghan for ITO test end */
 
 #include <linux/i2c.h>
 #include <linux/input.h>
 /* Huaqin add by yuexinghan for ITO test start */
 #include <linux/regulator/consumer.h>
-//#include <linux/debugfs.h>
+#include <linux/debugfs.h>
 /* Huaqin add by yuexinghan for ITO test end */
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_NT36xxx_ASUS
+#include <linux/nvtouch.h>
 #endif
 
 #define NVT_DEBUG 0
@@ -58,16 +60,17 @@
 
 //---I2C driver info.---
 #define NVT_I2C_NAME "NVT-ts"
+#define NVT_DRIVER_TYPE "OTC-NVT-ts"
 #define I2C_BLDR_Address 0x01
 #define I2C_FW_Address 0x01
 #define I2C_HW_Address 0x62
 
 #if NVT_DEBUG
-#define NVT_LOG(fmt, args...)    pr_err("[%s] %s %d: " fmt, NVT_I2C_NAME, __func__, __LINE__, ##args)
+#define NVT_LOG(fmt, args...)    pr_err("[%s] %s %d: " fmt, NVT_DRIVER_TYPE, __func__, __LINE__, ##args)
 #else
-#define NVT_LOG(fmt, args...)    pr_info("[%s] %s %d: " fmt, NVT_I2C_NAME, __func__, __LINE__, ##args)
+#define NVT_LOG(fmt, args...)    pr_info("[%s] %s %d: " fmt, NVT_DRIVER_TYPE, __func__, __LINE__, ##args)
 #endif
-#define NVT_ERR(fmt, args...)    pr_err("[%s] %s %d: " fmt, NVT_I2C_NAME, __func__, __LINE__, ##args)
+#define NVT_ERR(fmt, args...)    pr_err("[%s] %s %d: " fmt, NVT_DRIVER_TYPE, __func__, __LINE__, ##args)
 
 //---Input device info.---
 #define NVT_TS_NAME "NVTCapacitiveTouchScreen"
@@ -140,6 +143,7 @@ struct nvt_ts_mem_map {
 struct nvt_ts_data {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
+	struct work_struct nvt_work;
 	struct delayed_work nvt_fwu_work;
 	uint16_t addr;
 	int8_t phys[32];
