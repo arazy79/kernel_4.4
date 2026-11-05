@@ -13,7 +13,7 @@ on:
       defconfig:
         description: 'Nama file defconfig (dicari otomatis di arch/arm64/configs)'
         required: true
-        default: 'X00T_stock-defconfig'
+        default: 'X00T_defconfig'
       toolchain:
         description: 'gnu = gcc 13 bawaan Ubuntu (default, sudah terbukti boot) | llvm = Proton clang 13 | gcc = GCC 9 (Ubuntu cross, lewat apt)'
         type: choice
